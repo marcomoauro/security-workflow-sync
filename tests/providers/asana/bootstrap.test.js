@@ -34,22 +34,25 @@ describe('resolveWorkspaceGid', () => {
   });
 });
 
+function bootstrapClient({ existingFields = [] } = {}) {
+  let nextGid = 1;
+  return {
+    request: vi.fn(async (method, path) => {
+      if (method === 'POST' && path === '/projects') return { gid: 'P' };
+      return { gid: `g-${nextGid++}` };
+    }),
+    paginate: vi.fn(function* () {}).mockImplementation(async function* (path) {
+      if (path.endsWith('/custom_fields')) {
+        for (const f of existingFields) yield f;
+      }
+    }),
+  };
+}
+
 describe('bootstrapAsanaProject', () => {
   it('never creates an enum custom field with empty enum_options (Asana rejects that)', async () => {
-    let nextGid = 1;
-    const client = {
-      request: vi.fn(async (method, path, body) => {
-        if (method === 'POST' && path === '/projects') return { gid: 'P' };
-        return { gid: `g-${nextGid++}` };
-      }),
-    };
-
-    await bootstrapAsanaProject({
-      client,
-      workspaceGid: 'W',
-      projectName: 'Test',
-      logger: silentLogger,
-    });
+    const client = bootstrapClient();
+    await bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger });
 
     const enumFieldCreations = client.request.mock.calls.filter(
       ([method, path, body]) =>
@@ -60,5 +63,52 @@ describe('bootstrapAsanaProject', () => {
       expect(Array.isArray(body.enum_options)).toBe(true);
       expect(body.enum_options.length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('reuses an existing workspace custom field with the same name instead of recreating it', async () => {
+    const client = bootstrapClient({
+      existingFields: [
+        { gid: 'existing-dedup', name: 'Deduplication ID', resource_subtype: 'text' },
+        { gid: 'existing-sev', name: 'Severity', resource_subtype: 'enum' },
+      ],
+    });
+
+    await bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger });
+
+    const fieldCreationNames = client.request.mock.calls
+      .filter(([method, path]) => method === 'POST' && path === '/custom_fields')
+      .map(([, , body]) => body.name);
+
+    // The reused ones must NOT be POSTed again
+    expect(fieldCreationNames).not.toContain('Deduplication ID');
+    expect(fieldCreationNames).not.toContain('Severity');
+    // The non-existing ones must still be created
+    expect(fieldCreationNames).toContain('Advisory');
+    expect(fieldCreationNames).toContain('Repository');
+
+    // Both reused fields must still get attached to the new project
+    const attachedGids = client.request.mock.calls
+      .filter(([method, path]) => method === 'POST' && path === '/projects/P/addCustomFieldSetting')
+      .map(([, , body]) => body.custom_field);
+    expect(attachedGids).toContain('existing-dedup');
+    expect(attachedGids).toContain('existing-sev');
+  });
+
+  it('swallows "already attached" errors from addCustomFieldSetting and keeps going', async () => {
+    const client = bootstrapClient();
+    // Make the first addCustomFieldSetting fail with an "already" message
+    let throwOnce = true;
+    client.request.mockImplementation(async (method, path, body) => {
+      if (method === 'POST' && path === '/projects') return { gid: 'P' };
+      if (method === 'POST' && path === '/projects/P/addCustomFieldSetting' && throwOnce) {
+        throwOnce = false;
+        throw new Error('Asana POST /addCustomFieldSetting → 400: custom_field already added');
+      }
+      return { gid: `g-${Math.random()}` };
+    });
+
+    await expect(
+      bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger })
+    ).resolves.toEqual({ projectGid: 'P' });
   });
 });

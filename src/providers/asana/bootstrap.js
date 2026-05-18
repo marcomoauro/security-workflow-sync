@@ -20,6 +20,45 @@ export async function resolveWorkspaceGid({ client, logger }) {
   );
 }
 
+// Asana custom fields live at workspace scope and their names must be unique within the workspace.
+// We look up by name first and reuse the existing field if present, so re-running bootstrap
+// after a partial failure (or just a second time) doesn't crash on "duplicate name".
+async function findCustomFieldByName({ client, workspaceGid, name }) {
+  for await (const field of client.paginate(`/workspaces/${workspaceGid}/custom_fields`, {
+    opt_fields: 'gid,name,resource_subtype',
+  })) {
+    if (field.name === name) return field;
+  }
+  return null;
+}
+
+export async function ensureCustomField({ client, workspaceGid, projectGid, name, body, logger }) {
+  const existing = await findCustomFieldByName({ client, workspaceGid, name });
+  let fieldGid;
+  if (existing) {
+    fieldGid = existing.gid;
+    logger.info(`Reusing existing custom field "${name}" (${fieldGid}).`);
+  } else {
+    const created = await client.request('POST', '/custom_fields', {
+      workspace: workspaceGid,
+      name,
+      ...body,
+    });
+    fieldGid = created.gid;
+    logger.info(`Created custom field "${name}" (${fieldGid}).`);
+  }
+
+  try {
+    await client.request('POST', `/projects/${projectGid}/addCustomFieldSetting`, { custom_field: fieldGid });
+  } catch (err) {
+    // addCustomFieldSetting is idempotent in spirit but Asana may 400 if the field is already
+    // attached to the project. Swallow that specific case; rethrow anything else.
+    if (!/already/i.test(err.message)) throw err;
+    logger.info(`Custom field "${name}" was already attached to project ${projectGid}.`);
+  }
+  return fieldGid;
+}
+
 export async function bootstrapAsanaProject({ client, workspaceGid, teamGid, projectName, logger }) {
   logger.info(`Creating Asana project "${projectName}" in workspace ${workspaceGid}…`);
 
@@ -35,42 +74,27 @@ export async function bootstrapAsanaProject({ client, workspaceGid, teamGid, pro
     logger.info(`Created section "${name}".`);
   }
 
-  // 2. Custom fields
-  const textFields = [FIELD.DEDUP, FIELD.ADVISORY, FIELD.ADVISORY_URL];
-  for (const name of textFields) {
-    const field = await client.request('POST', '/custom_fields', {
-      workspace: workspaceGid,
-      resource_subtype: 'text',
-      name,
+  // 2. Custom fields — reuse existing workspace-level fields when present.
+  for (const name of [FIELD.DEDUP, FIELD.ADVISORY, FIELD.ADVISORY_URL]) {
+    await ensureCustomField({
+      client, workspaceGid, projectGid: project.gid, name, logger,
+      body: { resource_subtype: 'text' },
     });
-    await client.request('POST', `/projects/${project.gid}/addCustomFieldSetting`, {
-      custom_field: field.gid,
-    });
-    logger.info(`Created text custom field "${name}" (${field.gid}).`);
   }
 
-  // Severity enum: pre-populated
-  const severity = await client.request('POST', '/custom_fields', {
-    workspace: workspaceGid,
-    resource_subtype: 'enum',
-    name: FIELD.SEVERITY,
-    enum_options: SEVERITY_ENUM_OPTIONS,
+  await ensureCustomField({
+    client, workspaceGid, projectGid: project.gid, name: FIELD.SEVERITY, logger,
+    body: { resource_subtype: 'enum', enum_options: SEVERITY_ENUM_OPTIONS },
   });
-  await client.request('POST', `/projects/${project.gid}/addCustomFieldSetting`, { custom_field: severity.gid });
-  logger.info(`Created enum custom field "${FIELD.SEVERITY}".`);
 
   // Repository / Package / Tech Team: seeded with a single placeholder option because
   // Asana rejects enum custom fields with 0 options. Real options are added lazily
   // by the sync command's ensureEnumOption() as new repos/packages appear.
   for (const name of [FIELD.REPOSITORY, FIELD.PACKAGE, FIELD.TECH_TEAM]) {
-    const field = await client.request('POST', '/custom_fields', {
-      workspace: workspaceGid,
-      resource_subtype: 'enum',
-      name,
-      enum_options: [{ name: '—', color: 'cool-gray' }],
+    await ensureCustomField({
+      client, workspaceGid, projectGid: project.gid, name, logger,
+      body: { resource_subtype: 'enum', enum_options: [{ name: '—', color: 'cool-gray' }] },
     });
-    await client.request('POST', `/projects/${project.gid}/addCustomFieldSetting`, { custom_field: field.gid });
-    logger.info(`Created enum custom field "${name}".`);
   }
 
   return { projectGid: project.gid };
