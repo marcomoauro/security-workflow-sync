@@ -36,7 +36,7 @@ Run bootstrap once to create the project with the required sections and custom f
 docker run --rm \
   -e ASANA_ACCESS_TOKEN=... \
   -e ASANA_WORKSPACE_GID=... \
-  ghcr.io/<your-org>/security-workflow-sync:latest bootstrap
+  marcomoauro/security-workflow-sync:latest bootstrap
 ```
 
 The command prints the new `ASANA_PROJECT_GID`. Copy it for the next step.
@@ -49,7 +49,7 @@ docker run --rm \
   -e GITHUB_ORG=... \
   -e ASANA_ACCESS_TOKEN=... \
   -e ASANA_PROJECT_GID=... \
-  ghcr.io/<your-org>/security-workflow-sync:latest sync
+  marcomoauro/security-workflow-sync:latest sync
 ```
 
 ## How team assignment works
@@ -102,7 +102,7 @@ jobs:
             -e GITHUB_ORG=${{ vars.GITHUB_ORG }} \
             -e ASANA_ACCESS_TOKEN=${{ secrets.ASANA_TOKEN }} \
             -e ASANA_PROJECT_GID=${{ vars.ASANA_PROJECT_GID }} \
-            ghcr.io/<your-org>/security-workflow-sync:latest sync
+            marcomoauro/security-workflow-sync:latest sync
 ```
 
 ## What this tool does NOT do
