@@ -152,11 +152,61 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     return { action: 'created', dedupId: finding.dedupId };
   }
 
+  async function updateTicket(finding, existing) {
+    const newSevGid = severityToOptionGid(finding.severity);
+    const newSectionGid = severityToSectionGid(finding.severity);
+
+    const cfMap = new Map();
+    for (const cf of existing.customFields ?? []) cfMap.set(cf.gid, cf);
+
+    const currentSevGid = cfMap.get(ctx.fields[FIELD.SEVERITY].gid)?.enum_value?.gid ?? null;
+    const currentTeamGid = cfMap.get(ctx.fields[FIELD.TECH_TEAM].gid)?.enum_value?.gid ?? null;
+    const currentSectionGid = existing.sectionGids?.[0] ?? null;
+
+    const updates = {};
+    const needsReopen = !!existing.completed;
+    const needsSeverity = currentSevGid !== newSevGid;
+    const mappedTeam = ctx.teamMapping.get(finding.repository) ?? null;
+    const needsTeamAssign = !currentTeamGid && !!mappedTeam;
+    const needsSectionMove = currentSectionGid !== newSectionGid;
+
+    // Name/notes are cheap and idempotent — refresh them when anything else changes.
+    let touchedFields = false;
+    const customFields = {};
+
+    if (needsSeverity) { customFields[ctx.fields[FIELD.SEVERITY].gid] = newSevGid; touchedFields = true; }
+    if (needsTeamAssign) { customFields[ctx.fields[FIELD.TECH_TEAM].gid] = mappedTeam; touchedFields = true; }
+
+    const willPut = needsReopen || touchedFields;
+
+    if (willPut) {
+      updates.name = buildTaskName(finding);
+      updates.notes = buildTaskNotes(finding);
+      if (touchedFields) updates.custom_fields = customFields;
+      if (needsReopen) updates.completed = false;
+      await client.request('PUT', `/tasks/${existing.gid}`, updates);
+    }
+
+    if (needsReopen) {
+      await client.request('POST', `/tasks/${existing.gid}/stories`, {
+        text: 'Reopened automatically: this Dependabot alert is open again.',
+      });
+    }
+
+    if (needsSectionMove && newSectionGid) {
+      await client.request('POST', `/sections/${newSectionGid}/addTask`, { task: existing.gid });
+    }
+
+    if (needsReopen) return { action: 'reopened', dedupId: finding.dedupId };
+    if (willPut || needsSectionMove) return { action: 'updated', dedupId: finding.dedupId };
+    return { action: 'noop', dedupId: finding.dedupId };
+  }
+
   return {
     loadContext,
     listExistingTickets,
     createTicket,
-    // updateTicket, closeTicket, ensureTeamAssignmentTasks — added in subsequent tasks
+    updateTicket,
     _ctx: ctx, // exposed for testing only
   };
 }

@@ -231,3 +231,108 @@ describe('AsanaProvider.loadContext + listExistingTickets', () => {
     });
   });
 });
+
+describe('AsanaProvider.updateTicket', () => {
+  let client, provider;
+  beforeEach(async () => {
+    client = fakeClient();
+    provider = createAsanaProvider({ client, projectGid: 'P', logger: { info() {}, warn() {}, error() {} } });
+    setupContext(client);
+    client.paginate.mockReturnValue((async function* () {})());
+    await provider.loadContext();
+  });
+
+  function findingFor(overrides = {}) {
+    return {
+      dedupId: 'd', source: 'github', externalId: 'GHSA-x', repository: 'org/repo-1',
+      packageName: 'lodash', severity: 'HIGH', title: 't',
+      advisoryUrl: 'https://github.com/advisories/GHSA-x', remediation: '4.17.21',
+      ...overrides,
+    };
+  }
+
+  it('returns noop when the existing task already matches and is open', async () => {
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: false,
+      customFields: [
+        { gid: 'cf-sev', enum_value: { gid: 'sev-high' } },
+        { gid: 'cf-team', enum_value: { gid: 'team-platform' } },
+      ],
+      sectionGids: ['sec-high'],
+    };
+    provider._ctx.teamMapping.set('org/repo-1', 'team-platform');
+
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(findingFor(), existing);
+    expect(out.action).toBe('noop');
+    // No PUT issued
+    expect(client.request.mock.calls.find(c => c[0] === 'PUT' && c[1].startsWith('/tasks/'))).toBeUndefined();
+  });
+
+  it('reopens a completed task and adds a story', async () => {
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: true,
+      customFields: [{ gid: 'cf-sev', enum_value: { gid: 'sev-high' } }],
+      sectionGids: ['sec-high'],
+    };
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(findingFor(), existing);
+    expect(out.action).toBe('reopened');
+    const putCall = client.request.mock.calls.find(c => c[0] === 'PUT' && c[1] === '/tasks/T1');
+    expect(putCall[2].completed).toBe(false);
+    const storyCall = client.request.mock.calls.find(c => c[1] === '/tasks/T1/stories');
+    expect(storyCall[2].text).toMatch(/reopened/i);
+  });
+
+  it('moves the task to the new severity section when severity changed', async () => {
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: false,
+      customFields: [{ gid: 'cf-sev', enum_value: { gid: 'sev-low' } }],
+      sectionGids: ['sec-low'],
+    };
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(findingFor({ severity: 'HIGH' }), existing);
+    expect(out.action).toBe('updated');
+    const moveCall = client.request.mock.calls.find(c => c[1] === '/sections/sec-high/addTask');
+    expect(moveCall).toBeDefined();
+    expect(moveCall[2]).toEqual({ task: 'T1' });
+  });
+
+  it('preserves an existing Tech Team assignment even when the repo mapping is now empty (append-only)', async () => {
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: false,
+      customFields: [
+        { gid: 'cf-sev', enum_value: { gid: 'sev-high' } },
+        { gid: 'cf-team', enum_value: { gid: 'team-platform' } }, // already assigned
+      ],
+      sectionGids: ['sec-high'],
+    };
+    // No mapping in ctx → mapping says "no team"
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(findingFor(), existing);
+
+    // Must not have overwritten the Tech Team field
+    const putCall = client.request.mock.calls.find(c => c[0] === 'PUT' && c[1] === '/tasks/T1');
+    if (putCall) {
+      expect(putCall[2].custom_fields?.['cf-team']).toBeUndefined();
+    }
+    expect(['noop', 'updated']).toContain(out.action);
+  });
+
+  it('assigns Tech Team if the existing task lacks it and the repo is now mapped', async () => {
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: false,
+      customFields: [
+        { gid: 'cf-sev', enum_value: { gid: 'sev-high' } },
+        // no cf-team
+      ],
+      sectionGids: ['sec-high'],
+    };
+    provider._ctx.teamMapping.set('org/repo-1', 'team-platform');
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(findingFor(), existing);
+    expect(out.action).toBe('updated');
+    const putCall = client.request.mock.calls.find(c => c[0] === 'PUT' && c[1] === '/tasks/T1');
+    expect(putCall[2].custom_fields['cf-team']).toBe('team-platform');
+  });
+});
