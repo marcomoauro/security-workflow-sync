@@ -81,10 +81,82 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     if (!ctx.sections[name]) throw new Error(`Asana project ${projectGid} is missing section "${name}". Run \`sws bootstrap\` first.`);
   }
 
+  async function ensureEnumOption(fieldName, optionName) {
+    const field = ctx.fields[fieldName];
+    if (!field) throw new Error(`Unknown field ${fieldName}`);
+    let gid = field.options.get(optionName);
+    if (gid) return gid;
+    const created = await client.request('POST', `/custom_fields/${field.gid}/enum_options`, { name: optionName });
+    gid = created.gid;
+    field.options.set(optionName, gid);
+    return gid;
+  }
+
+  function severityToSectionGid(severity) {
+    const sectionName = SECTION_BY_SEVERITY[severity];
+    return ctx.sections[sectionName];
+  }
+
+  function severityToOptionGid(severity) {
+    const optName = SEVERITY_TO_OPTION_NAME[severity];
+    return ctx.fields[FIELD.SEVERITY].options.get(optName);
+  }
+
+  function buildTaskName(f) {
+    const sev = SEVERITY_TO_OPTION_NAME[f.severity] ?? f.severity;
+    return `[${sev}] ${f.packageName} – ${f.repository}`;
+  }
+
+  function buildTaskNotes(f) {
+    const lines = [
+      `Advisory: ${f.externalId}`,
+      f.advisoryUrl ? `URL: ${f.advisoryUrl}` : null,
+      `Repository: ${f.repository}`,
+      `Package: ${f.packageName}${f.ecosystem ? ` (${f.ecosystem})` : ''}`,
+      `Severity: ${f.severity}`,
+      f.remediation ? `Patched in: ${f.remediation}` : 'No patched version available yet.',
+      '',
+      f.title || '',
+      '',
+      '— Managed by security-workflow-sync. Do not change the Deduplication ID.',
+    ];
+    return lines.filter(l => l !== null).join('\n');
+  }
+
+  async function buildCustomFieldsPayload(f) {
+    const repoOptGid = await ensureEnumOption(FIELD.REPOSITORY, f.repository);
+    const pkgOptGid = await ensureEnumOption(FIELD.PACKAGE, f.packageName);
+    const cf = {
+      [ctx.fields[FIELD.DEDUP].gid]: f.dedupId,
+      [ctx.fields[FIELD.SEVERITY].gid]: severityToOptionGid(f.severity),
+      [ctx.fields[FIELD.REPOSITORY].gid]: repoOptGid,
+      [ctx.fields[FIELD.PACKAGE].gid]: pkgOptGid,
+      [ctx.fields[FIELD.ADVISORY].gid]: f.externalId ?? '',
+      [ctx.fields[FIELD.ADVISORY_URL].gid]: f.advisoryUrl ?? '',
+    };
+    const teamGid = ctx.teamMapping.get(f.repository);
+    if (teamGid) cf[ctx.fields[FIELD.TECH_TEAM].gid] = teamGid;
+    return cf;
+  }
+
+  async function createTicket(finding) {
+    const sectionGid = severityToSectionGid(finding.severity);
+    const customFields = await buildCustomFieldsPayload(finding);
+    await client.request('POST', '/tasks', {
+      name: buildTaskName(finding),
+      notes: buildTaskNotes(finding),
+      projects: [projectGid],
+      custom_fields: customFields,
+      memberships: [{ project: projectGid, section: sectionGid }],
+    });
+    return { action: 'created', dedupId: finding.dedupId };
+  }
+
   return {
     loadContext,
     listExistingTickets,
-    // createTicket, updateTicket, closeTicket, ensureTeamAssignmentTasks — added in subsequent tasks
+    createTicket,
+    // updateTicket, closeTicket, ensureTeamAssignmentTasks — added in subsequent tasks
     _ctx: ctx, // exposed for testing only
   };
 }
