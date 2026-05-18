@@ -59,13 +59,15 @@ export async function bootstrapAsanaProject({ client, workspaceGid, teamGid, pro
   await client.request('POST', `/projects/${project.gid}/addCustomFieldSetting`, { custom_field: severity.gid });
   logger.info(`Created enum custom field "${FIELD.SEVERITY}".`);
 
-  // Repository / Package / Tech Team: empty enums, options grow at sync time
+  // Repository / Package / Tech Team: seeded with a single placeholder option because
+  // Asana rejects enum custom fields with 0 options. Real options are added lazily
+  // by the sync command's ensureEnumOption() as new repos/packages appear.
   for (const name of [FIELD.REPOSITORY, FIELD.PACKAGE, FIELD.TECH_TEAM]) {
     const field = await client.request('POST', '/custom_fields', {
       workspace: workspaceGid,
       resource_subtype: 'enum',
       name,
-      enum_options: [],
+      enum_options: [{ name: '—', color: 'cool-gray' }],
     });
     await client.request('POST', `/projects/${project.gid}/addCustomFieldSetting`, { custom_field: field.gid });
     logger.info(`Created enum custom field "${name}".`);

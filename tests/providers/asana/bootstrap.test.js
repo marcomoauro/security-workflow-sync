@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resolveWorkspaceGid } from '../../../src/providers/asana/bootstrap.js';
+import { resolveWorkspaceGid, bootstrapAsanaProject } from '../../../src/providers/asana/bootstrap.js';
 
 function fakeClient(workspaces) {
   return {
@@ -31,5 +31,34 @@ describe('resolveWorkspaceGid', () => {
     ]);
     await expect(resolveWorkspaceGid({ client, logger: silentLogger }))
       .rejects.toThrow(/ASANA_WORKSPACE_GID[\s\S]*Alpha[\s\S]*W1[\s\S]*Beta[\s\S]*W2/);
+  });
+});
+
+describe('bootstrapAsanaProject', () => {
+  it('never creates an enum custom field with empty enum_options (Asana rejects that)', async () => {
+    let nextGid = 1;
+    const client = {
+      request: vi.fn(async (method, path, body) => {
+        if (method === 'POST' && path === '/projects') return { gid: 'P' };
+        return { gid: `g-${nextGid++}` };
+      }),
+    };
+
+    await bootstrapAsanaProject({
+      client,
+      workspaceGid: 'W',
+      projectName: 'Test',
+      logger: silentLogger,
+    });
+
+    const enumFieldCreations = client.request.mock.calls.filter(
+      ([method, path, body]) =>
+        method === 'POST' && path === '/custom_fields' && body?.resource_subtype === 'enum'
+    );
+    expect(enumFieldCreations.length).toBeGreaterThan(0);
+    for (const [, , body] of enumFieldCreations) {
+      expect(Array.isArray(body.enum_options)).toBe(true);
+      expect(body.enum_options.length).toBeGreaterThanOrEqual(1);
+    }
   });
 });
