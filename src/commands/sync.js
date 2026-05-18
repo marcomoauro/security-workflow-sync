@@ -19,7 +19,17 @@ export async function runSync({ config, logger }) {
   // Reload mapping so any *just-created* placeholders the user has since annotated are picked up next run.
   // For this run, placeholders we just created have no team yet — that's expected.
 
-  const result = await reconcile(findings, provider);
+  logger.info(`Reconciling ${findings.length} findings against Asana…`);
+  const result = await reconcile(findings, provider, {
+    onProgress: ({ processed, total, result: r }) => {
+      if (processed === total || processed % 100 === 0) {
+        const pct = Math.floor((processed * 100) / Math.max(total, 1));
+        logger.info(
+          `Reconciling: ${processed}/${total} (${pct}%) — created ${r.created}, updated ${r.updated}, reopened ${r.reopened}, closed ${r.closed}, noop ${r.noop}, skipped ${r.skipped}`
+        );
+      }
+    },
+  });
 
   const summary = {
     fetched: findings.length,

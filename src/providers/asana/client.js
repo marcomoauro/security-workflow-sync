@@ -27,11 +27,14 @@ export function createAsanaClient({ token, fetchImpl = fetch }) {
 
   // Asana uses offset-based pagination via { next_page: { offset } } in the *envelope*,
   // not in `data`. We need access to the envelope, so we use a sibling helper.
-  async function* paginate(path, query = {}) {
+  // `onPage({ page, count, hasNext })` is invoked once per HTTP request, after the
+  // response arrives but before items are yielded — useful for progress logging.
+  async function* paginate(path, query = {}, { onPage } = {}) {
     const url = new URL(ASANA_BASE + path);
     const q = { limit: 100, ...query };
     for (const [k, v] of Object.entries(q)) if (v != null) url.searchParams.set(k, String(v));
 
+    let pageNum = 0;
     while (true) {
       const res = await fetchImpl(url, {
         method: 'GET',
@@ -45,8 +48,11 @@ export function createAsanaClient({ token, fetchImpl = fetch }) {
         throw new Error(`Asana GET ${url.pathname} → ${res.status}: ${text.slice(0, 500)}`);
       }
       const envelope = await res.json();
-      for (const item of envelope.data ?? []) yield item;
+      pageNum++;
+      const items = envelope.data ?? [];
       const next = envelope.next_page?.offset;
+      onPage?.({ page: pageNum, count: items.length, hasNext: !!next });
+      for (const item of items) yield item;
       if (!next) return;
       url.searchParams.set('offset', next);
     }

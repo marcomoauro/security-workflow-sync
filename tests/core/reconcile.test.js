@@ -76,4 +76,27 @@ describe('reconcile', () => {
     expect(provider.loadContext).not.toHaveBeenCalled();
     expect(provider.listExistingTickets).toHaveBeenCalledOnce();
   });
+
+  it('invokes onProgress after each finding with progress counters', async () => {
+    const provider = makeProvider();
+    const findings = [
+      { dedupId: 'a', state: 'OPEN' },
+      { dedupId: 'b', state: 'OPEN' },
+      { dedupId: 'c', state: 'FIXED' }, // no ticket → skipped
+    ];
+    // Snapshot the result at each callback (the engine intentionally passes the live
+    // result object by reference, so we have to clone here to inspect intermediate state).
+    const snapshots = [];
+    const onProgress = vi.fn(({ processed, total, result }) => {
+      snapshots.push({ processed, total, result: { ...result } });
+    });
+    await reconcile(findings, provider, { onProgress });
+
+    expect(onProgress).toHaveBeenCalledTimes(3);
+    expect(snapshots[0]).toMatchObject({ processed: 1, total: 3 });
+    expect(snapshots[0].result.created).toBe(1);
+    expect(snapshots[2]).toMatchObject({ processed: 3, total: 3 });
+    expect(snapshots[2].result.created).toBe(2);
+    expect(snapshots[2].result.skipped).toBe(1);
+  });
 });

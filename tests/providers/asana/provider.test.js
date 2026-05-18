@@ -359,10 +359,11 @@ describe('AsanaProvider.closeTicket', () => {
 });
 
 describe('AsanaProvider.ensureTeamAssignmentTasks', () => {
-  let client, provider;
+  let client, provider, logger;
   beforeEach(async () => {
     client = fakeClient();
-    provider = createAsanaProvider({ client, projectGid: 'P', logger: { info() {}, warn() {}, error() {} } });
+    logger = { info: vi.fn(), warn() {}, error() {} };
+    provider = createAsanaProvider({ client, projectGid: 'P', logger });
     setupContext(client);
     client.paginate.mockReturnValue((async function* () {})());
     await provider.loadContext();
@@ -390,5 +391,35 @@ describe('AsanaProvider.ensureTeamAssignmentTasks', () => {
       memberships: [{ project: 'P', section: 'sec-team' }],
       custom_fields: { 'cf-repo': 'repo-2' },
     });
+  });
+
+  it('logs progress for each placeholder created with a counter', async () => {
+    provider._ctx.knownTeamAssignmentRepos = new Set();
+    client.request.mockImplementation(async (method, path, body) => {
+      if (path.startsWith('/custom_fields/') && path.endsWith('/enum_options')) {
+        return { gid: `opt-${body.name}`, name: body.name };
+      }
+      if (path === '/tasks') return { gid: 'NEW' };
+      return {};
+    });
+
+    await provider.ensureTeamAssignmentTasks(['a/repo', 'b/repo', 'c/repo']);
+
+    const messages = logger.info.mock.calls.map(c => c[0]);
+    const perItem = messages.filter(m => /^Team Assignment placeholder \d+\/\d+:/.test(m));
+    expect(perItem).toHaveLength(3);
+    expect(perItem[0]).toBe('Team Assignment placeholder 1/3: "a/repo".');
+    expect(perItem[1]).toBe('Team Assignment placeholder 2/3: "b/repo".');
+    expect(perItem[2]).toBe('Team Assignment placeholder 3/3: "c/repo".');
+  });
+
+  it('logs a "nothing to do" message when all repos are already known', async () => {
+    provider._ctx.knownTeamAssignmentRepos = new Set(['a/repo', 'b/repo']);
+    await provider.ensureTeamAssignmentTasks(['a/repo', 'b/repo']);
+
+    const messages = logger.info.mock.calls.map(c => c[0]);
+    expect(messages).toContain('All repositories already have a Team Assignment placeholder.');
+    // No POST /tasks should have been issued
+    expect(client.request.mock.calls.find(c => c[0] === 'POST' && c[1] === '/tasks')).toBeUndefined();
   });
 });

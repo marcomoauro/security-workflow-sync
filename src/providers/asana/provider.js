@@ -8,6 +8,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
   };
 
   async function loadContext() {
+    logger.info('Loading Asana project context (custom fields + sections)…');
     const settings = await client.request('GET', `/projects/${projectGid}/custom_field_settings`, undefined, {
       query: { opt_fields: 'custom_field.gid,custom_field.name,custom_field.resource_subtype,custom_field.enum_options.gid,custom_field.enum_options.name,custom_field.enum_options.enabled' },
     });
@@ -42,8 +43,14 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     const teamField = ctx.fields[FIELD.TECH_TEAM];
     ctx.knownTeamAssignmentRepos = new Set();
 
+    logger.info('Loading existing Team Assignment placeholders…');
     const it = client.paginate(`/sections/${teamSectionGid}/tasks`, {
       opt_fields: 'name,custom_fields.gid,custom_fields.enum_value.gid,custom_fields.enum_value.name',
+    }, {
+      onPage: ({ page, count, hasNext }) => {
+        const more = hasNext ? ', more pages to follow' : ', last page';
+        logger.info(`Team Assignment page ${page}: ${count} placeholders${more}.`);
+      },
     });
     for await (const task of it) {
       const fields = task.custom_fields ?? [];
@@ -60,8 +67,14 @@ export function createAsanaProvider({ client, projectGid, logger }) {
   async function listExistingTickets() {
     const dedupGid = ctx.fields[FIELD.DEDUP].gid;
     const map = new Map();
+    logger.info('Loading existing vulnerability tasks from Asana…');
     const it = client.paginate(`/projects/${projectGid}/tasks`, {
       opt_fields: 'name,completed,custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.gid,custom_fields.enum_value.name,memberships.section.gid',
+    }, {
+      onPage: ({ page, count, hasNext }) => {
+        const more = hasNext ? ', more pages to follow' : ', last page';
+        logger.info(`Existing tasks page ${page}: ${count} tasks${more}.`);
+      },
     });
     for await (const task of it) {
       const dedup = (task.custom_fields ?? []).find(f => f.gid === dedupGid)?.text_value;
@@ -75,6 +88,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
         sectionGids: (task.memberships ?? []).map(m => m.section?.gid).filter(Boolean),
       });
     }
+    logger.info(`Loaded ${map.size} existing vulnerability tasks (by Deduplication ID).`);
     return map;
   }
 
@@ -217,9 +231,14 @@ export function createAsanaProvider({ client, projectGid, logger }) {
   async function ensureTeamAssignmentTasks(repositories) {
     const teamSectionGid = ctx.sections[SECTION_TEAM_ASSIGNMENT];
     const repoField = ctx.fields[FIELD.REPOSITORY];
+    const missing = repositories.filter(r => !ctx.knownTeamAssignmentRepos?.has(r));
+    if (missing.length === 0) {
+      logger.info('All repositories already have a Team Assignment placeholder.');
+      return;
+    }
+    logger.info(`Creating ${missing.length} new Team Assignment placeholder(s)…`);
     let created = 0;
-    for (const repo of repositories) {
-      if (ctx.knownTeamAssignmentRepos?.has(repo)) continue;
+    for (const repo of missing) {
       const repoOptGid = await ensureEnumOption(FIELD.REPOSITORY, repo);
       await client.request('POST', '/tasks', {
         name: repo,
@@ -230,8 +249,9 @@ export function createAsanaProvider({ client, projectGid, logger }) {
       });
       ctx.knownTeamAssignmentRepos.add(repo);
       created++;
+      logger.info(`Team Assignment placeholder ${created}/${missing.length}: "${repo}".`);
     }
-    if (created > 0) logger.info(`Created ${created} Team Assignment placeholder task(s).`);
+    logger.info(`Created ${created} Team Assignment placeholder task(s).`);
   }
 
   return {
