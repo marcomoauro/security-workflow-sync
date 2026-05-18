@@ -336,3 +336,24 @@ describe('AsanaProvider.updateTicket', () => {
     expect(putCall[2].custom_fields['cf-team']).toBe('team-platform');
   });
 });
+
+describe('AsanaProvider.closeTicket', () => {
+  let client, provider;
+  beforeEach(async () => {
+    client = fakeClient();
+    provider = createAsanaProvider({ client, projectGid: 'P', logger: { info() {}, warn() {}, error() {} } });
+    setupContext(client);
+    client.paginate.mockReturnValue((async function* () {})());
+    await provider.loadContext();
+  });
+
+  it('completes the task and writes a story', async () => {
+    client.request.mockResolvedValue({});
+    const out = await provider.closeTicket({ gid: 'T1', dedupId: 'd', completed: false });
+    expect(out.action).toBe('closed');
+    const putCall = client.request.mock.calls.find(c => c[0] === 'PUT' && c[1] === '/tasks/T1');
+    expect(putCall[2].completed).toBe(true);
+    const storyCall = client.request.mock.calls.find(c => c[1] === '/tasks/T1/stories');
+    expect(storyCall[2].text).toMatch(/resolved|fixed|dismissed|closed/i);
+  });
+});

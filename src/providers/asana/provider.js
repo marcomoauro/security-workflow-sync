@@ -202,11 +202,20 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     return { action: 'noop', dedupId: finding.dedupId };
   }
 
+  async function closeTicket(existing) {
+    await client.request('PUT', `/tasks/${existing.gid}`, { completed: true });
+    await client.request('POST', `/tasks/${existing.gid}/stories`, {
+      text: 'Closed automatically: the underlying Dependabot alert is no longer open (fixed or dismissed).',
+    });
+    return { action: 'closed', dedupId: existing.dedupId };
+  }
+
   return {
     loadContext,
     listExistingTickets,
     createTicket,
     updateTicket,
+    closeTicket,
     _ctx: ctx, // exposed for testing only
   };
 }
