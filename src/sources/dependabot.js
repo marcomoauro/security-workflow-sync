@@ -15,10 +15,10 @@ function toFinding(alert) {
   const vuln = alert.security_vulnerability ?? {};
   const pkg = vuln.package ?? {};
   const repository = alert.repository?.full_name ?? '';
-  const externalId = advisory.ghsa_id;
+  const externalId = advisory.ghsa_id ?? advisory.cve_id ?? `alert-${alert.number}`;
   const packageName = pkg.name ?? 'unknown';
-  const advisoryUrl = externalId
-    ? `https://github.com/advisories/${externalId}`
+  const advisoryUrl = advisory.ghsa_id
+    ? `https://github.com/advisories/${advisory.ghsa_id}`
     : (alert.html_url ?? null);
 
   const finding = {

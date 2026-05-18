@@ -26,7 +26,7 @@ https://app.asana.com/0/<workspace_gid>/...
 
 ### Step 2 — GitHub credentials
 
-Create a GitHub Personal Access Token (classic) with `read:org` and `repo` scopes. The token must be granted at the org level so it can read org-wide Dependabot alerts. See https://docs.github.com/en/rest/dependabot/alerts for the required permissions.
+Create a GitHub PAT (classic) with the `security_events` scope (required for private repository Dependabot alerts) plus `public_repo` if you also need alerts from public repos. For org-level access, the token must be authorized for the organization. See https://docs.github.com/en/rest/dependabot/alerts for the required permissions.
 
 ### Step 3 — Bootstrap the Asana project
 
@@ -57,6 +57,12 @@ docker run --rm \
 When the sync encounters a repository it has not seen before, it creates a placeholder task in the **Team Assignment** section with the Repository custom field set to that repo's name. You then manually set the **Tech Team** enum field on that placeholder in Asana.
 
 From the next sync onward, every alert for that repository inherits the team value from the placeholder. The team field is append-only: if you later clear it on an individual task, the next sync restores it from the placeholder — it will never be blanked out by the tool.
+
+**Important:** the append-only invariant means that **changing** the Tech Team on an existing placeholder does **not** retroactively reassign existing vulnerability tasks for that repository. It only affects:
+- new vulnerability tasks created from that point onward
+- existing vulnerability tasks that did not have a Tech Team set yet
+
+If you need to move a repository's existing alerts to a different team, do it manually in Asana (multi-select + edit the Tech Team field). This is intentional: it prevents the sync tool from silently overwriting decisions a human made directly inside Asana.
 
 ## Idempotency and the dedup key
 

@@ -1,5 +1,5 @@
+// Precondition: caller must have invoked provider.loadContext() before calling this.
 export async function reconcile(findings, provider) {
-  await provider.loadContext();
   const existing = await provider.listExistingTickets();
 
   const result = { created: 0, updated: 0, reopened: 0, closed: 0, skipped: 0, noop: 0 };

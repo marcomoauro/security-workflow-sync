@@ -70,10 +70,10 @@ describe('reconcile', () => {
     expect(result.skipped).toBe(1);
   });
 
-  it('calls loadContext exactly once before listing', async () => {
+  it('lists existing tickets but does NOT call loadContext', async () => {
     const provider = makeProvider();
     await reconcile([], provider);
-    expect(provider.loadContext).toHaveBeenCalledOnce();
+    expect(provider.loadContext).not.toHaveBeenCalled();
     expect(provider.listExistingTickets).toHaveBeenCalledOnce();
   });
 });
