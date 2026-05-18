@@ -1,10 +1,14 @@
 {
   "name": "security-workflow-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sync security findings (GitHub Dependabot) into engineering workflow tools (Asana).",
   "type": "module",
-  "bin": { "sws": "./bin/sws.js" },
-  "engines": { "node": ">=24" },
+  "bin": {
+    "sws": "./bin/sws.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
