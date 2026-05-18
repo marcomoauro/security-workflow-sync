@@ -24,14 +24,19 @@ export function createGithubClient({ token, fetchImpl = fetch }) {
     return { data: await res.json(), link: res.headers.get('link') };
   }
 
-  // Auto-paginate using Link header (rel="next")
-  async function* paginate(path, query = {}) {
+  // Auto-paginate using Link header (rel="next").
+  // `onPage({ page, count, hasNext })` is invoked once per HTTP request, after the response
+  // arrives but before items are yielded — useful for progress logging on long pulls.
+  async function* paginate(path, query = {}, { onPage } = {}) {
     let url = path;
     let q = { per_page: 100, ...query };
+    let pageNum = 0;
     while (url) {
       const { data, link } = await request(url, { query: q });
-      yield* data;
+      pageNum++;
       const next = parseNext(link);
+      onPage?.({ page: pageNum, count: data.length, hasNext: !!next });
+      yield* data;
       if (!next) return;
       // After the first call, switch to following the absolute next URL
       url = next.replace(GITHUB_API, '');

@@ -5,7 +5,7 @@ import { createAsanaProvider } from '../providers/asana/provider.js';
 
 export async function runSync({ config, logger }) {
   logger.info(`Fetching Dependabot alerts for org "${config.githubOrg}"…`);
-  const findings = await fetchDependabotFindings({ org: config.githubOrg, token: config.githubToken });
+  const findings = await fetchDependabotFindings({ org: config.githubOrg, token: config.githubToken, logger });
   logger.info(`Fetched ${findings.length} alerts (${countByState(findings)}).`);
 
   const client = createAsanaClient({ token: config.asanaToken });

@@ -1,10 +1,21 @@
 import { createGithubClient } from './github-client.js';
 import { dedupId, normalizeSeverity } from '../core/finding.js';
 
-export async function fetchDependabotFindings({ org, token, fetchImpl }) {
+export async function fetchDependabotFindings({ org, token, fetchImpl, logger }) {
   const gh = createGithubClient({ token, fetchImpl });
   const findings = [];
-  for await (const alert of gh.paginate(`/orgs/${org}/dependabot/alerts`, { per_page: 100 })) {
+  const iterator = gh.paginate(
+    `/orgs/${org}/dependabot/alerts`,
+    { per_page: 100 },
+    {
+      onPage: ({ page, count, hasNext }) => {
+        if (!logger) return;
+        const more = hasNext ? ', more pages to follow' : ', last page';
+        logger.info(`Dependabot page ${page}: ${count} alerts${more}.`);
+      },
+    },
+  );
+  for await (const alert of iterator) {
     findings.push(toFinding(alert));
   }
   return findings;

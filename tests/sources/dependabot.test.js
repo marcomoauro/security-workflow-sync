@@ -84,4 +84,22 @@ describe('fetchDependabotFindings', () => {
     const findings = await fetchDependabotFindings({ org: 'o', token: 't', fetchImpl });
     expect(findings[0].severity).toBe('MEDIUM');
   });
+
+  it('logs a progress line per page, with hasNext on intermediate pages and not on the last', async () => {
+    const fetchImpl = mockFetch([
+      [sampleAlert({ number: 1 })],
+      [sampleAlert({ number: 2 })],
+      [sampleAlert({ number: 3 })],
+    ]);
+    const logger = { info: vi.fn(), warn() {}, error() {} };
+
+    await fetchDependabotFindings({ org: 'o', token: 't', fetchImpl, logger });
+
+    const messages = logger.info.mock.calls.map(c => c[0]);
+    const pageMessages = messages.filter(m => m.startsWith('Dependabot page '));
+    expect(pageMessages).toHaveLength(3);
+    expect(pageMessages[0]).toMatch(/^Dependabot page 1: 1 alerts, more pages to follow\.$/);
+    expect(pageMessages[1]).toMatch(/^Dependabot page 2: 1 alerts, more pages to follow\.$/);
+    expect(pageMessages[2]).toMatch(/^Dependabot page 3: 1 alerts, last page\.$/);
+  });
 });
