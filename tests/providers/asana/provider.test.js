@@ -357,3 +357,38 @@ describe('AsanaProvider.closeTicket', () => {
     expect(storyCall[2].text).toMatch(/resolved|fixed|dismissed|closed/i);
   });
 });
+
+describe('AsanaProvider.ensureTeamAssignmentTasks', () => {
+  let client, provider;
+  beforeEach(async () => {
+    client = fakeClient();
+    provider = createAsanaProvider({ client, projectGid: 'P', logger: { info() {}, warn() {}, error() {} } });
+    setupContext(client);
+    client.paginate.mockReturnValue((async function* () {})());
+    await provider.loadContext();
+  });
+
+  it('creates a placeholder task for each unseen repository in the Team Assignment section', async () => {
+    // Pretend we already have a Team Assignment for org/repo-1
+    provider._ctx.teamMapping.set('org/repo-1', 'team-platform');
+    // Add a known placeholder name set
+    provider._ctx.knownTeamAssignmentRepos = new Set(['org/repo-1']);
+
+    client.request.mockImplementation(async (method, path, body) => {
+      if (path === '/custom_fields/cf-repo/enum_options') return { gid: 'repo-2', name: body.name };
+      if (path === '/tasks') return { gid: 'NEW' };
+      return {};
+    });
+
+    await provider.ensureTeamAssignmentTasks(['org/repo-1', 'org/repo-2']);
+
+    const postTasks = client.request.mock.calls.filter(c => c[0] === 'POST' && c[1] === '/tasks');
+    expect(postTasks).toHaveLength(1);
+    expect(postTasks[0][2]).toMatchObject({
+      name: 'org/repo-2',
+      projects: ['P'],
+      memberships: [{ project: 'P', section: 'sec-team' }],
+      custom_fields: { 'cf-repo': 'repo-2' },
+    });
+  });
+});

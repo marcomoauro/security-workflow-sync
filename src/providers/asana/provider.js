@@ -40,6 +40,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     const teamSectionGid = ctx.sections[SECTION_TEAM_ASSIGNMENT];
     const repoField = ctx.fields[FIELD.REPOSITORY];
     const teamField = ctx.fields[FIELD.TECH_TEAM];
+    ctx.knownTeamAssignmentRepos = new Set();
 
     const it = client.paginate(`/sections/${teamSectionGid}/tasks`, {
       opt_fields: 'name,custom_fields.gid,custom_fields.enum_value.gid,custom_fields.enum_value.name',
@@ -48,9 +49,12 @@ export function createAsanaProvider({ client, projectGid, logger }) {
       const fields = task.custom_fields ?? [];
       const repoOpt = fields.find(f => f.gid === repoField.gid)?.enum_value;
       const teamOpt = fields.find(f => f.gid === teamField.gid)?.enum_value;
-      if (repoOpt?.name && teamOpt?.gid) ctx.teamMapping.set(repoOpt.name, teamOpt.gid);
+      if (repoOpt?.name) {
+        ctx.knownTeamAssignmentRepos.add(repoOpt.name);
+        if (teamOpt?.gid) ctx.teamMapping.set(repoOpt.name, teamOpt.gid);
+      }
     }
-    logger.info(`Loaded team mapping for ${ctx.teamMapping.size} repositories.`);
+    logger.info(`Loaded ${ctx.knownTeamAssignmentRepos.size} Team Assignment placeholders (${ctx.teamMapping.size} with a Tech Team set).`);
   }
 
   async function listExistingTickets() {
@@ -210,12 +214,33 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     return { action: 'closed', dedupId: existing.dedupId };
   }
 
+  async function ensureTeamAssignmentTasks(repositories) {
+    const teamSectionGid = ctx.sections[SECTION_TEAM_ASSIGNMENT];
+    const repoField = ctx.fields[FIELD.REPOSITORY];
+    let created = 0;
+    for (const repo of repositories) {
+      if (ctx.knownTeamAssignmentRepos?.has(repo)) continue;
+      const repoOptGid = await ensureEnumOption(FIELD.REPOSITORY, repo);
+      await client.request('POST', '/tasks', {
+        name: repo,
+        notes: 'Set the Tech Team for this repository. New Dependabot alerts will be auto-assigned to it.',
+        projects: [projectGid],
+        custom_fields: { [repoField.gid]: repoOptGid },
+        memberships: [{ project: projectGid, section: teamSectionGid }],
+      });
+      ctx.knownTeamAssignmentRepos.add(repo);
+      created++;
+    }
+    if (created > 0) logger.info(`Created ${created} Team Assignment placeholder task(s).`);
+  }
+
   return {
     loadContext,
     listExistingTickets,
     createTicket,
     updateTicket,
     closeTicket,
+    ensureTeamAssignmentTasks,
     _ctx: ctx, // exposed for testing only
   };
 }
