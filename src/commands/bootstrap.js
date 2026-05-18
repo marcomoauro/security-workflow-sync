@@ -1,11 +1,15 @@
 import { createAsanaClient } from '../providers/asana/client.js';
-import { bootstrapAsanaProject } from '../providers/asana/bootstrap.js';
+import { bootstrapAsanaProject, resolveWorkspaceGid } from '../providers/asana/bootstrap.js';
 
 export async function runBootstrap({ config, projectName, teamGid, logger }) {
   const client = createAsanaClient({ token: config.asanaToken });
+
+  const workspaceGid = config.asanaWorkspaceGid
+    || await resolveWorkspaceGid({ client, logger });
+
   const { projectGid } = await bootstrapAsanaProject({
     client,
-    workspaceGid: config.asanaWorkspaceGid,
+    workspaceGid,
     teamGid,
     projectName: projectName || 'Security Findings',
     logger,

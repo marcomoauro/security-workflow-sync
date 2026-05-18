@@ -20,7 +20,8 @@ Env (sync):
 
 Env (bootstrap):
   ASANA_ACCESS_TOKEN
-  ASANA_WORKSPACE_GID    The Asana workspace to create the project in
+  ASANA_WORKSPACE_GID    (optional) Target workspace. Auto-detected when the
+                         PAT has access to exactly one workspace.
   ASANA_TEAM_GID         (optional) The Asana team to place the project under
 
 Flags:

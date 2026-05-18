@@ -17,12 +17,9 @@ Current integration matrix:
 
 ### Step 1 — Asana credentials
 
-Create a Personal Access Token at https://developers.asana.com/docs/personal-access-token.
+Create a Personal Access Token at https://developers.asana.com/docs/personal-access-token. The token is the only thing bootstrap needs in the common case — if the token has access to exactly one workspace it gets auto-detected.
 
-Find your `ASANA_WORKSPACE_GID` by opening Asana in a browser and navigating to any project. The workspace GID appears in the URL:
-```
-https://app.asana.com/0/<workspace_gid>/...
-```
+If you belong to multiple Asana workspaces, the bootstrap command will print all of them with their GIDs and ask you to pick one by setting `ASANA_WORKSPACE_GID`.
 
 ### Step 2 — GitHub credentials
 
@@ -35,9 +32,10 @@ Run bootstrap once to create the project with the required sections and custom f
 ```bash
 docker run --rm \
   -e ASANA_ACCESS_TOKEN=... \
-  -e ASANA_WORKSPACE_GID=... \
   marcomoauro/security-workflow-sync:latest bootstrap
 ```
+
+(If you have multiple workspaces, add `-e ASANA_WORKSPACE_GID=...` to pick one.)
 
 The command prints the new `ASANA_PROJECT_GID`. Copy it for the next step.
 

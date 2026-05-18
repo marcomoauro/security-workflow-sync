@@ -6,7 +6,7 @@ export function loadConfig(env = process.env) {
     githubOrg: env.GITHUB_ORG,
     asanaToken: env.ASANA_ACCESS_TOKEN,
     asanaProjectGid: env.ASANA_PROJECT_GID,
-    asanaWorkspaceGid: env.ASANA_WORKSPACE_GID, // only required for bootstrap
+    asanaWorkspaceGid: env.ASANA_WORKSPACE_GID, // optional for bootstrap; auto-detected when omitted and the PAT has access to exactly one workspace
     missing,
   };
 }
@@ -16,11 +16,5 @@ export function assertSyncConfig(cfg) {
 }
 
 export function assertBootstrapConfig(cfg) {
-  const need = ['ASANA_ACCESS_TOKEN', 'ASANA_WORKSPACE_GID'];
-  const missing = need.filter(k => {
-    if (k === 'ASANA_ACCESS_TOKEN') return !cfg.asanaToken;
-    if (k === 'ASANA_WORKSPACE_GID') return !cfg.asanaWorkspaceGid;
-    return false;
-  });
-  if (missing.length) throw new Error(`Missing required env vars for bootstrap: ${missing.join(', ')}`);
+  if (!cfg.asanaToken) throw new Error('Missing required env var for bootstrap: ASANA_ACCESS_TOKEN');
 }

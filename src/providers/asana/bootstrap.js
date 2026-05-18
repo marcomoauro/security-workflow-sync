@@ -1,5 +1,25 @@
 import { FIELD, SECTION_BY_SEVERITY, SECTION_TEAM_ASSIGNMENT, SEVERITY_ENUM_OPTIONS } from './schema.js';
 
+export async function resolveWorkspaceGid({ client, logger }) {
+  const me = await client.request('GET', '/users/me');
+  const workspaces = me?.workspaces ?? [];
+
+  if (workspaces.length === 0) {
+    throw new Error('The provided Asana access token has no workspaces. Check the token and try again.');
+  }
+
+  if (workspaces.length === 1) {
+    const [w] = workspaces;
+    logger.info(`Auto-detected Asana workspace: ${w.name} (${w.gid}).`);
+    return w.gid;
+  }
+
+  const list = workspaces.map(w => `  - ${w.name}: ${w.gid}`).join('\n');
+  throw new Error(
+    `Multiple Asana workspaces detected. Set ASANA_WORKSPACE_GID to one of:\n${list}`
+  );
+}
+
 export async function bootstrapAsanaProject({ client, workspaceGid, teamGid, projectName, logger }) {
   logger.info(`Creating Asana project "${projectName}" in workspace ${workspaceGid}…`);
 
