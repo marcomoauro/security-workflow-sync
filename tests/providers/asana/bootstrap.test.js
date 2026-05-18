@@ -68,8 +68,8 @@ describe('bootstrapAsanaProject', () => {
   it('reuses an existing workspace custom field with the same name instead of recreating it', async () => {
     const client = bootstrapClient({
       existingFields: [
-        { gid: 'existing-dedup', name: 'Deduplication ID', resource_subtype: 'text' },
-        { gid: 'existing-sev', name: 'Severity', resource_subtype: 'enum' },
+        { gid: 'existing-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' },
+        { gid: 'existing-sev', name: 'SWS: Severity', resource_subtype: 'enum' },
       ],
     });
 
@@ -80,11 +80,11 @@ describe('bootstrapAsanaProject', () => {
       .map(([, , body]) => body.name);
 
     // The reused ones must NOT be POSTed again
-    expect(fieldCreationNames).not.toContain('Deduplication ID');
-    expect(fieldCreationNames).not.toContain('Severity');
+    expect(fieldCreationNames).not.toContain('SWS: Deduplication ID');
+    expect(fieldCreationNames).not.toContain('SWS: Severity');
     // The non-existing ones must still be created
-    expect(fieldCreationNames).toContain('Advisory');
-    expect(fieldCreationNames).toContain('Repository');
+    expect(fieldCreationNames).toContain('SWS: Advisory');
+    expect(fieldCreationNames).toContain('SWS: Repository');
 
     // Both reused fields must still get attached to the new project
     const attachedGids = client.request.mock.calls
@@ -92,6 +92,19 @@ describe('bootstrapAsanaProject', () => {
       .map(([, , body]) => body.custom_field);
     expect(attachedGids).toContain('existing-dedup');
     expect(attachedGids).toContain('existing-sev');
+  });
+
+  it('throws a clear error when an existing field has the wrong type', async () => {
+    const client = bootstrapClient({
+      existingFields: [
+        // A pre-existing field named like ours but of the WRONG type (text instead of enum)
+        { gid: 'wrong-type-12345', name: 'SWS: Repository', resource_subtype: 'text' },
+      ],
+    });
+
+    await expect(
+      bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger })
+    ).rejects.toThrow(/SWS: Repository[\s\S]*wrong-type-12345[\s\S]*expected type "enum"[\s\S]*found "text"/);
   });
 
   it('swallows "already attached" errors from addCustomFieldSetting and keeps going', async () => {

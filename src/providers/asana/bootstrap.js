@@ -36,6 +36,14 @@ export async function ensureCustomField({ client, workspaceGid, projectGid, name
   const existing = await findCustomFieldByName({ client, workspaceGid, name });
   let fieldGid;
   if (existing) {
+    if (body.resource_subtype && existing.resource_subtype && existing.resource_subtype !== body.resource_subtype) {
+      throw new Error(
+        `Cannot reuse existing Asana custom field "${name}" (gid ${existing.gid}): ` +
+        `expected type "${body.resource_subtype}", found "${existing.resource_subtype}". ` +
+        `Rename or delete the conflicting field in your Asana workspace and re-run bootstrap. ` +
+        `(Tip: this tool prefixes its field names with "SWS:" — if you see a SWS-prefixed field of the wrong type, it's leftover from a previous version.)`
+      );
+    }
     fieldGid = existing.gid;
     logger.info(`Reusing existing custom field "${name}" (${fieldGid}).`);
   } else {

@@ -7,14 +7,17 @@ export const SECTION_BY_SEVERITY = {
   LOW: 'Low',
 };
 
+// Field names are prefixed with "SWS:" so they don't collide with generically-named
+// fields that may already exist in the user's Asana workspace ("Package", "Repository",
+// etc.). Custom fields are workspace-scoped in Asana and names must be unique.
 export const FIELD = {
-  DEDUP: 'Deduplication ID',
-  SEVERITY: 'Severity',
-  REPOSITORY: 'Repository',
-  PACKAGE: 'Package',
-  ADVISORY: 'Advisory',
-  ADVISORY_URL: 'Advisory URL',
-  TECH_TEAM: 'Tech Team',
+  DEDUP: 'SWS: Deduplication ID',
+  SEVERITY: 'SWS: Severity',
+  REPOSITORY: 'SWS: Repository',
+  PACKAGE: 'SWS: Package',
+  ADVISORY: 'SWS: Advisory',
+  ADVISORY_URL: 'SWS: Advisory URL',
+  TECH_TEAM: 'SWS: Tech Team',
 };
 
 export const SEVERITY_ENUM_OPTIONS = [

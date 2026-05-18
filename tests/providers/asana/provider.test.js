@@ -13,18 +13,18 @@ function setupContext(client) {
   client.request.mockImplementation(async (method, path) => {
     if (path.includes('/custom_field_settings')) {
       return [
-        { custom_field: { gid: 'cf-dedup', name: 'Deduplication ID', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-sev', name: 'Severity', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-sev', name: 'SWS: Severity', resource_subtype: 'enum', enum_options: [
           { gid: 'sev-crit', name: 'Critical' }, { gid: 'sev-high', name: 'High' },
           { gid: 'sev-med', name: 'Medium' }, { gid: 'sev-low', name: 'Low' },
         ] } },
-        { custom_field: { gid: 'cf-repo', name: 'Repository', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-repo', name: 'SWS: Repository', resource_subtype: 'enum', enum_options: [
           { gid: 'repo-1', name: 'org/repo-1' },
         ] } },
-        { custom_field: { gid: 'cf-pkg', name: 'Package', resource_subtype: 'enum', enum_options: [] } },
-        { custom_field: { gid: 'cf-adv', name: 'Advisory', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-advurl', name: 'Advisory URL', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-team', name: 'Tech Team', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-pkg', name: 'SWS: Package', resource_subtype: 'enum', enum_options: [] } },
+        { custom_field: { gid: 'cf-adv', name: 'SWS: Advisory', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-advurl', name: 'SWS: Advisory URL', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-team', name: 'SWS: Tech Team', resource_subtype: 'enum', enum_options: [
           { gid: 'team-platform', name: 'Platform' },
         ] } },
       ];
@@ -62,18 +62,18 @@ describe('AsanaProvider.createTicket', () => {
       if (path === '/tasks' && method === 'POST') return { gid: 'NEW' };
       // re-run setupContext defaults
       if (path.includes('/custom_field_settings')) return [
-        { custom_field: { gid: 'cf-dedup', name: 'Deduplication ID', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-sev', name: 'Severity', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-sev', name: 'SWS: Severity', resource_subtype: 'enum', enum_options: [
           { gid: 'sev-crit', name: 'Critical' }, { gid: 'sev-high', name: 'High' },
           { gid: 'sev-med', name: 'Medium' }, { gid: 'sev-low', name: 'Low' },
         ] } },
-        { custom_field: { gid: 'cf-repo', name: 'Repository', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-repo', name: 'SWS: Repository', resource_subtype: 'enum', enum_options: [
           { gid: 'repo-1', name: 'org/repo-1' },
         ] } },
-        { custom_field: { gid: 'cf-pkg', name: 'Package', resource_subtype: 'enum', enum_options: [] } },
-        { custom_field: { gid: 'cf-adv', name: 'Advisory', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-advurl', name: 'Advisory URL', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-team', name: 'Tech Team', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-pkg', name: 'SWS: Package', resource_subtype: 'enum', enum_options: [] } },
+        { custom_field: { gid: 'cf-adv', name: 'SWS: Advisory', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-advurl', name: 'SWS: Advisory URL', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-team', name: 'SWS: Tech Team', resource_subtype: 'enum', enum_options: [
           { gid: 'team-platform', name: 'Platform' },
         ] } },
       ];
@@ -125,18 +125,18 @@ describe('AsanaProvider.createTicket', () => {
       if (method === 'POST' && path === '/tasks') return { gid: 'NEW' };
       // For loadContext re-invocations during this call we already finished; keep the defaults available
       if (path.includes('/custom_field_settings')) return [
-        { custom_field: { gid: 'cf-dedup', name: 'Deduplication ID', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-sev', name: 'Severity', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-sev', name: 'SWS: Severity', resource_subtype: 'enum', enum_options: [
           { gid: 'sev-crit', name: 'Critical' }, { gid: 'sev-high', name: 'High' },
           { gid: 'sev-med', name: 'Medium' }, { gid: 'sev-low', name: 'Low' },
         ] } },
-        { custom_field: { gid: 'cf-repo', name: 'Repository', resource_subtype: 'enum', enum_options: [
+        { custom_field: { gid: 'cf-repo', name: 'SWS: Repository', resource_subtype: 'enum', enum_options: [
           { gid: 'repo-1', name: 'org/repo-1' },
         ] } },
-        { custom_field: { gid: 'cf-pkg', name: 'Package', resource_subtype: 'enum', enum_options: [] } },
-        { custom_field: { gid: 'cf-adv', name: 'Advisory', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-advurl', name: 'Advisory URL', resource_subtype: 'text' } },
-        { custom_field: { gid: 'cf-team', name: 'Tech Team', resource_subtype: 'enum', enum_options: [] } },
+        { custom_field: { gid: 'cf-pkg', name: 'SWS: Package', resource_subtype: 'enum', enum_options: [] } },
+        { custom_field: { gid: 'cf-adv', name: 'SWS: Advisory', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-advurl', name: 'SWS: Advisory URL', resource_subtype: 'text' } },
+        { custom_field: { gid: 'cf-team', name: 'SWS: Tech Team', resource_subtype: 'enum', enum_options: [] } },
       ];
       if (path.endsWith('/sections')) return [
         { gid: 'sec-team', name: 'Team Assignment' },
@@ -155,7 +155,7 @@ describe('AsanaProvider.createTicket', () => {
     await provider.createTicket(finding);
     const optCall = client.request.mock.calls.find(c => c[1] === '/custom_fields/cf-pkg/enum_options');
     expect(optCall[2]).toEqual({ name: 'brand-new-package' });
-    expect(provider._ctx.fields['Package'].options.get('brand-new-package')).toBe('pkg-new');
+    expect(provider._ctx.fields['SWS: Package'].options.get('brand-new-package')).toBe('pkg-new');
   });
 
   it('omits Tech Team when repo has no mapping', async () => {
