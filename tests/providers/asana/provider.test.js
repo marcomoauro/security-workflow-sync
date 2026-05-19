@@ -423,3 +423,111 @@ describe('AsanaProvider.ensureTeamAssignmentTasks', () => {
     expect(client.request.mock.calls.find(c => c[0] === 'POST' && c[1] === '/tasks')).toBeUndefined();
   });
 });
+
+describe('AsanaProvider.ensureEnumOption (case-insensitive caching)', () => {
+  let client, provider;
+  beforeEach(async () => {
+    client = fakeClient();
+    provider = createAsanaProvider({ client, projectGid: 'P', logger: { info() {}, warn() {}, error() {} } });
+  });
+
+  it('reuses an existing option when the package name only differs in case (Werkzeug vs werkzeug)', async () => {
+    // setupContext seeds Severity with options Critical/High/Medium/Low.
+    // Simulate the existing Package field having "Werkzeug" already as an option.
+    client.request.mockImplementation(async (method, path) => {
+      if (path.includes('/custom_field_settings')) {
+        return [
+          { custom_field: { gid: 'cf-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-sev', name: 'SWS: Severity', resource_subtype: 'enum', enum_options: [
+            { gid: 'sev-crit', name: 'Critical' }, { gid: 'sev-high', name: 'High' },
+            { gid: 'sev-med', name: 'Medium' }, { gid: 'sev-low', name: 'Low' },
+          ] } },
+          { custom_field: { gid: 'cf-repo', name: 'SWS: Repository', resource_subtype: 'enum', enum_options: [] } },
+          { custom_field: { gid: 'cf-pkg', name: 'SWS: Package', resource_subtype: 'enum', enum_options: [
+            { gid: 'pkg-werkzeug', name: 'Werkzeug' }, // capital W stored
+          ] } },
+          { custom_field: { gid: 'cf-adv', name: 'SWS: Advisory', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-advurl', name: 'SWS: Advisory URL', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-team', name: 'SWS: Tech Team', resource_subtype: 'enum', enum_options: [] } },
+        ];
+      }
+      if (path.endsWith('/sections')) return [
+        { gid: 'sec-team', name: 'Team Assignment' },
+        { gid: 'sec-crit', name: 'Critical' }, { gid: 'sec-high', name: 'High' },
+        { gid: 'sec-med', name: 'Medium' }, { gid: 'sec-low', name: 'Low' },
+      ];
+      if (method === 'POST' && path === '/tasks') return { gid: 'NEW' };
+      if (method === 'POST' && path.includes('/enum_options')) return { gid: 'should-not-be-called' };
+      return {};
+    });
+    client.paginate.mockReturnValue((async function* () {})());
+    await provider.loadContext();
+
+    // Now create a ticket for a finding whose package name is "werkzeug" (lowercase).
+    // The cache should hit the existing "Werkzeug" option and skip the POST entirely.
+    const finding = {
+      dedupId: 'd', source: 'github', externalId: 'GHSA-x', repository: 'org/r',
+      packageName: 'werkzeug', severity: 'HIGH', title: 't',
+      advisoryUrl: 'u', remediation: null,
+    };
+    await provider.createTicket(finding);
+
+    const enumPostCalls = client.request.mock.calls.filter(
+      c => c[0] === 'POST' && c[1] === '/custom_fields/cf-pkg/enum_options'
+    );
+    expect(enumPostCalls).toHaveLength(0);
+
+    const createCall = client.request.mock.calls.find(c => c[0] === 'POST' && c[1] === '/tasks');
+    expect(createCall[2].custom_fields['cf-pkg']).toBe('pkg-werkzeug');
+  });
+
+  it('recovers from Asana enum_option_duplicate_name by refreshing the field and reusing the existing option', async () => {
+    // Seed context — Package field starts with NO options in our cache.
+    let refreshCallCount = 0;
+    client.request.mockImplementation(async (method, path, body) => {
+      if (path.includes('/custom_field_settings')) {
+        return [
+          { custom_field: { gid: 'cf-dedup', name: 'SWS: Deduplication ID', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-sev', name: 'SWS: Severity', resource_subtype: 'enum', enum_options: [
+            { gid: 'sev-high', name: 'High' },
+          ] } },
+          { custom_field: { gid: 'cf-repo', name: 'SWS: Repository', resource_subtype: 'enum', enum_options: [] } },
+          { custom_field: { gid: 'cf-pkg', name: 'SWS: Package', resource_subtype: 'enum', enum_options: [] } },
+          { custom_field: { gid: 'cf-adv', name: 'SWS: Advisory', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-advurl', name: 'SWS: Advisory URL', resource_subtype: 'text' } },
+          { custom_field: { gid: 'cf-team', name: 'SWS: Tech Team', resource_subtype: 'enum', enum_options: [] } },
+        ];
+      }
+      if (path.endsWith('/sections')) return [
+        { gid: 'sec-team', name: 'Team Assignment' },
+        { gid: 'sec-high', name: 'High' },
+        { gid: 'sec-crit', name: 'Critical' }, { gid: 'sec-med', name: 'Medium' }, { gid: 'sec-low', name: 'Low' },
+      ];
+      // The refresh fetch — returns the stale option that's already on the server
+      if (method === 'GET' && path === '/custom_fields/cf-pkg') {
+        refreshCallCount++;
+        return { gid: 'cf-pkg', enum_options: [{ gid: 'pkg-existing-werkzeug', name: 'Werkzeug' }] };
+      }
+      // The POST that triggers the duplicate-name error
+      if (method === 'POST' && path === '/custom_fields/cf-pkg/enum_options') {
+        throw new Error('Asana POST /custom_fields/cf-pkg/enum_options → 403: An enum option already exists with the name: Werkzeug. (enum_option_duplicate_name)');
+      }
+      if (method === 'POST' && path.includes('/enum_options')) return { gid: `opt-${Math.random()}` };
+      if (method === 'POST' && path === '/tasks') return { gid: 'NEW' };
+      return {};
+    });
+    client.paginate.mockReturnValue((async function* () {})());
+    await provider.loadContext();
+
+    const finding = {
+      dedupId: 'd', source: 'github', externalId: 'GHSA-x', repository: 'org/r',
+      packageName: 'Werkzeug', severity: 'HIGH', title: 't',
+      advisoryUrl: 'u', remediation: null,
+    };
+    await provider.createTicket(finding);
+
+    expect(refreshCallCount).toBe(1);
+    const createCall = client.request.mock.calls.find(c => c[0] === 'POST' && c[1] === '/tasks');
+    expect(createCall[2].custom_fields['cf-pkg']).toBe('pkg-existing-werkzeug');
+  });
+});

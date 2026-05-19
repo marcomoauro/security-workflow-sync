@@ -15,8 +15,14 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     for (const s of settings ?? []) {
       const cf = s.custom_field ?? s;
       if (!cf?.name) continue;
+      // Asana treats enum option names as unique case-insensitively (the API rejects
+      // a new option whose lowercased name equals any existing one). Mirror that here
+      // so cache lookups don't miss when the package name's casing differs between
+      // findings (e.g. "Werkzeug" vs "werkzeug" in different Dependabot advisories).
       const options = new Map();
-      for (const o of cf.enum_options ?? []) options.set(o.name, o.gid);
+      for (const o of cf.enum_options ?? []) {
+        if (o?.name && o?.gid) options.set(String(o.name).toLowerCase(), o.gid);
+      }
       ctx.fields[cf.name] = { gid: cf.gid, type: cf.resource_subtype, options };
     }
     requireField(FIELD.DEDUP);
@@ -99,15 +105,43 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     if (!ctx.sections[name]) throw new Error(`Asana project ${projectGid} is missing section "${name}". Run \`sws bootstrap\` first.`);
   }
 
+  async function refreshFieldOptions(field) {
+    const fresh = await client.request('GET', `/custom_fields/${field.gid}`, undefined, {
+      query: { opt_fields: 'enum_options.gid,enum_options.name,enum_options.enabled' },
+    });
+    field.options.clear();
+    for (const o of fresh?.enum_options ?? []) {
+      if (o?.name && o?.gid) field.options.set(String(o.name).toLowerCase(), o.gid);
+    }
+  }
+
   async function ensureEnumOption(fieldName, optionName) {
     const field = ctx.fields[fieldName];
     if (!field) throw new Error(`Unknown field ${fieldName}`);
-    let gid = field.options.get(optionName);
+    const key = String(optionName).toLowerCase();
+    let gid = field.options.get(key);
     if (gid) return gid;
-    const created = await client.request('POST', `/custom_fields/${field.gid}/enum_options`, { name: optionName });
-    gid = created.gid;
-    field.options.set(optionName, gid);
-    return gid;
+
+    try {
+      const created = await client.request('POST', `/custom_fields/${field.gid}/enum_options`, { name: optionName });
+      gid = created.gid;
+      field.options.set(key, gid);
+      return gid;
+    } catch (err) {
+      // Asana rejects POST if an enum option already exists with the same name (case-insensitive)
+      // but our cache somehow missed it (e.g. >500-option fields, manual edits, race conditions).
+      // Refresh from the server and use whatever Asana has.
+      if (!/duplicate.?name/i.test(err.message)) throw err;
+      await refreshFieldOptions(field);
+      gid = field.options.get(key);
+      if (!gid) {
+        throw new Error(
+          `Asana rejected enum option "${optionName}" on field ${field.gid} as a duplicate, ` +
+          `but no matching option was found after refreshing the field. Original error: ${err.message}`
+        );
+      }
+      return gid;
+    }
   }
 
   function severityToSectionGid(severity) {
@@ -117,7 +151,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
 
   function severityToOptionGid(severity) {
     const optName = SEVERITY_TO_OPTION_NAME[severity];
-    return ctx.fields[FIELD.SEVERITY].options.get(optName);
+    return ctx.fields[FIELD.SEVERITY].options.get(String(optName).toLowerCase());
   }
 
   function buildTaskName(f) {
