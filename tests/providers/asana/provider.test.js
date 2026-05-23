@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAsanaProvider } from '../../../src/providers/asana/provider.js';
+import { createAsanaProvider, buildTaskName, buildTaskNotes } from '../../../src/providers/asana/provider.js';
 
 function fakeClient() {
   return {
@@ -253,8 +253,13 @@ describe('AsanaProvider.updateTicket', () => {
   }
 
   it('returns noop when the existing task already matches and is open', async () => {
+    const f = findingFor();
     const existing = {
       gid: 'T1', dedupId: 'd', completed: false,
+      // name and notes must match what buildTask* would produce, otherwise the drift
+      // detector forces a PUT to refresh them.
+      name: buildTaskName(f),
+      notes: buildTaskNotes(f),
       customFields: [
         { gid: 'cf-sev', enum_value: { gid: 'sev-high' } },
         { gid: 'cf-team', enum_value: { gid: 'team-platform' } },
@@ -264,10 +269,32 @@ describe('AsanaProvider.updateTicket', () => {
     provider._ctx.teamMapping.set('org/repo-1', 'team-platform');
 
     client.request.mockResolvedValue({});
-    const out = await provider.updateTicket(findingFor(), existing);
+    const out = await provider.updateTicket(f, existing);
     expect(out.action).toBe('noop');
     // No PUT issued
     expect(client.request.mock.calls.find(c => c[0] === 'PUT' && c[1].startsWith('/tasks/'))).toBeUndefined();
+  });
+
+  it('forces a PUT when the existing notes no longer match what we would generate (drift)', async () => {
+    const f = findingFor();
+    const existing = {
+      gid: 'T1', dedupId: 'd', completed: false,
+      name: buildTaskName(f),
+      notes: 'Old notes from a previous schema — missing Vulnerable versions line, etc.',
+      customFields: [
+        { gid: 'cf-sev', enum_value: { gid: 'sev-high' } },
+        { gid: 'cf-team', enum_value: { gid: 'team-platform' } },
+      ],
+      sectionGids: ['sec-high'],
+    };
+    provider._ctx.teamMapping.set('org/repo-1', 'team-platform');
+
+    client.request.mockResolvedValue({});
+    const out = await provider.updateTicket(f, existing);
+    expect(out.action).toBe('updated');
+    const putCall = client.request.mock.calls.find(c => c[0] === 'PUT' && c[1] === '/tasks/T1');
+    expect(putCall).toBeDefined();
+    expect(putCall[2].notes).toBe(buildTaskNotes(f));
   });
 
   it('reopens a completed task and adds a story', async () => {
@@ -530,5 +557,50 @@ describe('AsanaProvider.ensureEnumOption (case-insensitive caching)', () => {
     expect(refreshCallCount).toBe(1);
     const createCall = client.request.mock.calls.find(c => c[0] === 'POST' && c[1] === '/tasks');
     expect(createCall[2].custom_fields['cf-pkg']).toBe('pkg-existing-werkzeug');
+  });
+});
+
+describe('buildTaskNotes', () => {
+  it('includes vulnerable version range when present', () => {
+    const out = buildTaskNotes({
+      externalId: 'GHSA-x', advisoryUrl: 'https://example/GHSA-x',
+      repository: 'org/r', packageName: 'lodash', ecosystem: 'npm',
+      severity: 'HIGH', remediation: '4.17.21',
+      vulnerableVersionRange: '< 4.17.21',
+      title: 'Prototype pollution',
+      manifestPaths: [],
+    });
+    expect(out).toContain('Vulnerable versions: < 4.17.21');
+  });
+
+  it('omits Vulnerable versions line when range is missing', () => {
+    const out = buildTaskNotes({
+      externalId: 'GHSA-x', advisoryUrl: 'u', repository: 'org/r',
+      packageName: 'p', severity: 'LOW', remediation: null,
+      vulnerableVersionRange: null, title: 't', manifestPaths: [],
+    });
+    expect(out).not.toContain('Vulnerable versions:');
+  });
+
+  it('lists all affected manifests as a bullet block', () => {
+    const out = buildTaskNotes({
+      externalId: 'GHSA-x', advisoryUrl: 'u', repository: 'org/r',
+      packageName: 'p', severity: 'LOW', remediation: null,
+      manifestPaths: ['package.json', 'subdir/package.json', 'docker/package.json'],
+      title: 't',
+    });
+    expect(out).toContain('Affected manifests:');
+    expect(out).toContain('  - package.json');
+    expect(out).toContain('  - subdir/package.json');
+    expect(out).toContain('  - docker/package.json');
+  });
+
+  it('omits Affected manifests block when array is empty or missing', () => {
+    const out = buildTaskNotes({
+      externalId: 'GHSA-x', advisoryUrl: 'u', repository: 'org/r',
+      packageName: 'p', severity: 'LOW', remediation: null, title: 't',
+      manifestPaths: [],
+    });
+    expect(out).not.toContain('Affected manifests:');
   });
 });

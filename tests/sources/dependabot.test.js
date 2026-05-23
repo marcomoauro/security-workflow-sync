@@ -33,7 +33,13 @@ const sampleAlert = (overrides = {}) => ({
   },
   security_vulnerability: {
     package: { name: 'lodash', ecosystem: 'npm' },
+    vulnerable_version_range: '< 4.17.21',
     first_patched_version: { identifier: '4.17.21' },
+  },
+  dependency: {
+    package: { name: 'lodash', ecosystem: 'npm' },
+    manifest_path: 'package.json',
+    scope: 'runtime',
   },
   html_url: 'https://github.com/o/r/security/dependabot/1',
   repository: { full_name: 'o/r' },
@@ -54,9 +60,27 @@ describe('fetchDependabotFindings', () => {
       severity: 'HIGH',
       state: 'OPEN',
       remediation: '4.17.21',
+      vulnerableVersionRange: '< 4.17.21',
+      manifestPaths: ['package.json'],
     });
     expect(findings[0].dedupId).toMatch(/^[0-9a-f]{12}$/);
     expect(findings[0].advisoryUrl).toContain('GHSA-aaaa-bbbb-cccc');
+  });
+
+  it('produces empty manifestPaths when dependency.manifest_path is missing', async () => {
+    const alert = sampleAlert();
+    delete alert.dependency;
+    const fetchImpl = mockFetch([[alert]]);
+    const findings = await fetchDependabotFindings({ org: 'o', token: 't', fetchImpl });
+    expect(findings[0].manifestPaths).toEqual([]);
+  });
+
+  it('produces null vulnerableVersionRange when not provided by the API', async () => {
+    const alert = sampleAlert();
+    delete alert.security_vulnerability.vulnerable_version_range;
+    const fetchImpl = mockFetch([[alert]]);
+    const findings = await fetchDependabotFindings({ org: 'o', token: 't', fetchImpl });
+    expect(findings[0].vulnerableVersionRange).toBeNull();
   });
 
   it('marks non-open alerts as FIXED', async () => {

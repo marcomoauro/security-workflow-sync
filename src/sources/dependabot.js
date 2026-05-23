@@ -63,6 +63,7 @@ function toFinding(alert, fallbackRepo = '') {
   const advisoryUrl = advisory.ghsa_id
     ? `https://github.com/advisories/${advisory.ghsa_id}`
     : (alert.html_url ?? null);
+  const manifestPath = alert.dependency?.manifest_path ?? null;
 
   const finding = {
     source: 'github',
@@ -73,7 +74,14 @@ function toFinding(alert, fallbackRepo = '') {
     severity: normalizeSeverity(advisory.severity),
     title: advisory.summary ?? `${packageName} ${externalId}`,
     advisoryUrl,
+    // Range of affected versions, e.g. "< 4.17.21" or ">= 1.0.0, < 2.0.0".
+    // The Dependabot API does NOT expose the exact installed version — that lives in
+    // the lockfile. The range is the most precise actionable info we have.
+    vulnerableVersionRange: vuln.vulnerable_version_range ?? null,
     remediation: vuln.first_patched_version?.identifier ?? null,
+    // Manifest files where Dependabot found the dependency (e.g. "package.json").
+    // Always an array so merge can union them across duplicate alerts.
+    manifestPaths: manifestPath ? [manifestPath] : [],
     state: alert.state === 'open' ? 'OPEN' : 'FIXED',
     metadata: {
       cveId: advisory.cve_id ?? null,

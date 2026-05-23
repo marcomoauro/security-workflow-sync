@@ -148,4 +148,29 @@ describe('mergeFindingsByDedupId', () => {
   it('handles empty input', () => {
     expect(mergeFindingsByDedupId([])).toEqual([]);
   });
+
+  it('unions manifestPaths across duplicates regardless of state precedence', () => {
+    const input = [
+      { dedupId: 'a', state: 'FIXED', manifestPaths: ['package.json'] },
+      { dedupId: 'a', state: 'OPEN', manifestPaths: ['subdir/package.json'] },
+      { dedupId: 'a', state: 'FIXED', manifestPaths: ['docker/package.json'] },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].state).toBe('OPEN');
+    expect(out[0].manifestPaths.sort()).toEqual([
+      'docker/package.json',
+      'package.json',
+      'subdir/package.json',
+    ]);
+  });
+
+  it('dedupes identical manifest paths inside the union', () => {
+    const input = [
+      { dedupId: 'a', state: 'FIXED', manifestPaths: ['package.json', 'docker/package.json'] },
+      { dedupId: 'a', state: 'OPEN', manifestPaths: ['package.json'] }, // duplicate
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out[0].manifestPaths).toEqual(['package.json', 'docker/package.json']);
+  });
 });

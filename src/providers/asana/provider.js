@@ -1,5 +1,35 @@
 import { FIELD, SECTION_BY_SEVERITY, SECTION_TEAM_ASSIGNMENT, SEVERITY_TO_OPTION_NAME, pickEnumColor } from './schema.js';
 
+// Pure renderers — no closure dependencies on the provider state. Exported so that
+// tests can compute the same canonical name/notes the provider will write to Asana,
+// and so the drift detector in updateTicket() compares strings against the exact
+// values that would be POSTed.
+export function buildTaskName(f) {
+  const sev = SEVERITY_TO_OPTION_NAME[f.severity] ?? f.severity;
+  return `[${sev}] ${f.packageName} – ${f.repository}`;
+}
+
+export function buildTaskNotes(f) {
+  const manifestsBlock = (f.manifestPaths && f.manifestPaths.length > 0)
+    ? `Affected manifests:\n${f.manifestPaths.map(p => `  - ${p}`).join('\n')}`
+    : null;
+  const lines = [
+    `Advisory: ${f.externalId}`,
+    f.advisoryUrl ? `URL: ${f.advisoryUrl}` : null,
+    `Repository: ${f.repository}`,
+    `Package: ${f.packageName}${f.ecosystem ? ` (${f.ecosystem})` : ''}`,
+    f.vulnerableVersionRange ? `Vulnerable versions: ${f.vulnerableVersionRange}` : null,
+    `Severity: ${f.severity}`,
+    f.remediation ? `Patched in: ${f.remediation}` : 'No patched version available yet.',
+    manifestsBlock,
+    '',
+    f.title || '',
+    '',
+    '— Managed by security-workflow-sync. Do not change the Deduplication ID.',
+  ];
+  return lines.filter(l => l !== null).join('\n');
+}
+
 export function createAsanaProvider({ client, projectGid, logger }) {
   const ctx = {
     fields: {},         // logical name → { gid, type, options: Map<name, gid> }
@@ -75,7 +105,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     const map = new Map();
     logger.info('Loading existing vulnerability tasks from Asana…');
     const it = client.paginate(`/projects/${projectGid}/tasks`, {
-      opt_fields: 'name,completed,custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.gid,custom_fields.enum_value.name,memberships.section.gid',
+      opt_fields: 'name,notes,completed,custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.gid,custom_fields.enum_value.name,memberships.section.gid',
     }, {
       onPage: ({ page, count, hasNext }) => {
         const more = hasNext ? ', more pages to follow' : ', last page';
@@ -90,6 +120,7 @@ export function createAsanaProvider({ client, projectGid, logger }) {
         dedupId: dedup,
         completed: !!task.completed,
         name: task.name,
+        notes: task.notes ?? '',
         customFields: task.custom_fields ?? [],
         sectionGids: (task.memberships ?? []).map(m => m.section?.gid).filter(Boolean),
       });
@@ -157,27 +188,6 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     return ctx.fields[FIELD.SEVERITY].options.get(String(optName).toLowerCase());
   }
 
-  function buildTaskName(f) {
-    const sev = SEVERITY_TO_OPTION_NAME[f.severity] ?? f.severity;
-    return `[${sev}] ${f.packageName} – ${f.repository}`;
-  }
-
-  function buildTaskNotes(f) {
-    const lines = [
-      `Advisory: ${f.externalId}`,
-      f.advisoryUrl ? `URL: ${f.advisoryUrl}` : null,
-      `Repository: ${f.repository}`,
-      `Package: ${f.packageName}${f.ecosystem ? ` (${f.ecosystem})` : ''}`,
-      `Severity: ${f.severity}`,
-      f.remediation ? `Patched in: ${f.remediation}` : 'No patched version available yet.',
-      '',
-      f.title || '',
-      '',
-      '— Managed by security-workflow-sync. Do not change the Deduplication ID.',
-    ];
-    return lines.filter(l => l !== null).join('\n');
-  }
-
   async function buildCustomFieldsPayload(f) {
     const repoOptGid = await ensureEnumOption(FIELD.REPOSITORY, f.repository);
     const pkgOptGid = await ensureEnumOption(FIELD.PACKAGE, f.packageName);
@@ -232,11 +242,19 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     if (needsSeverity) { customFields[ctx.fields[FIELD.SEVERITY].gid] = newSevGid; touchedFields = true; }
     if (needsTeamAssign) { customFields[ctx.fields[FIELD.TECH_TEAM].gid] = mappedTeam; touchedFields = true; }
 
-    const willPut = needsReopen || touchedFields;
+    // Detect notes drift — happens whenever buildTaskNotes() schema changes (new lines,
+    // reordering) or after a human-or-bot edited the notes manually. Force a PUT so
+    // the task always reflects the canonical content we generate.
+    const newName = buildTaskName(finding);
+    const newNotes = buildTaskNotes(finding);
+    const needsNameRefresh = existing.name !== newName;
+    const needsNotesRefresh = (existing.notes ?? '') !== newNotes;
+
+    const willPut = needsReopen || touchedFields || needsNameRefresh || needsNotesRefresh;
 
     if (willPut) {
-      updates.name = buildTaskName(finding);
-      updates.notes = buildTaskNotes(finding);
+      updates.name = newName;
+      updates.notes = newNotes;
       if (touchedFields) updates.custom_fields = customFields;
       if (needsReopen) updates.completed = false;
       await client.request('PUT', `/tasks/${existing.gid}`, updates);

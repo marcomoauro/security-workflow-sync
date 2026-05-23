@@ -32,11 +32,19 @@ export function mergeFindingsByDedupId(findings) {
   for (const f of findings) {
     const existing = byKey.get(f.dedupId);
     if (!existing) {
-      byKey.set(f.dedupId, f);
+      // Clone so we can mutate manifestPaths in-place on subsequent matches.
+      byKey.set(f.dedupId, { ...f, manifestPaths: [...(f.manifestPaths ?? [])] });
       continue;
     }
+    // Union manifest paths regardless of which state wins — when Dependabot reports
+    // the same vuln across multiple manifests we want all of them visible.
+    for (const p of f.manifestPaths ?? []) {
+      if (!existing.manifestPaths.includes(p)) existing.manifestPaths.push(p);
+    }
+    // OPEN beats FIXED: if this finding is OPEN and the kept one isn't, swap base
+    // fields but preserve the union of manifestPaths we just accumulated.
     if (existing.state !== 'OPEN' && f.state === 'OPEN') {
-      byKey.set(f.dedupId, f);
+      byKey.set(f.dedupId, { ...f, manifestPaths: existing.manifestPaths });
     }
   }
   return Array.from(byKey.values());
