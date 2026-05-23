@@ -102,4 +102,73 @@ describe('fetchDependabotFindings', () => {
     expect(pageMessages[1]).toMatch(/^Dependabot page 2: 1 alerts, more pages to follow\.$/);
     expect(pageMessages[2]).toMatch(/^Dependabot page 3: 1 alerts, last page\.$/);
   });
+
+  it('when includeRepos is set, hits the repo-level endpoint for each repo (not the org-level one)', async () => {
+    // One alert per repo. mockFetch ignores URL; we'll inspect the URLs separately.
+    const fetchImpl = vi.fn(async (url) => {
+      const urlStr = url.toString();
+      return {
+        ok: true,
+        status: 200,
+        json: async () => urlStr.includes('/repos/o/r1/') ? [sampleAlert({ number: 10 })]
+                       : urlStr.includes('/repos/o/r2/') ? [sampleAlert({ number: 20 })]
+                       : [],
+        text: async () => '[]',
+        headers: { get: () => null }, // no next page
+      };
+    });
+
+    const findings = await fetchDependabotFindings({
+      org: 'o', token: 't', fetchImpl,
+      includeRepos: ['o/r1', 'o/r2'],
+    });
+
+    expect(findings).toHaveLength(2);
+
+    const urls = fetchImpl.mock.calls.map(c => c[0].toString());
+    expect(urls.some(u => u.includes('/repos/o/r1/dependabot/alerts'))).toBe(true);
+    expect(urls.some(u => u.includes('/repos/o/r2/dependabot/alerts'))).toBe(true);
+    // Org-level endpoint must NOT be hit when includeRepos is set
+    expect(urls.some(u => u.includes('/orgs/o/dependabot/alerts'))).toBe(false);
+  });
+
+  it('per-repo fetch logs progress prefixed with the repo name', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => [sampleAlert()],
+      text: async () => '[]',
+      headers: { get: () => null },
+    }));
+    const logger = { info: vi.fn(), warn() {}, error() {} };
+
+    await fetchDependabotFindings({
+      org: 'o', token: 't', fetchImpl, logger,
+      includeRepos: ['acme/web-app'],
+    });
+
+    const messages = logger.info.mock.calls.map(c => c[0]);
+    expect(messages.some(m => m.startsWith('Fetching Dependabot alerts for 1 included repo(s)'))).toBe(true);
+    expect(messages.some(m => m.startsWith('acme/web-app page 1:'))).toBe(true);
+  });
+
+  it('fills the repository field from the URL when the API response omits it (repo-level)', async () => {
+    // Repo-level Dependabot responses may omit the `repository` object since it's
+    // implied by the URL. Verify we fill it from the include list.
+    const fetchImpl = vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => [{
+        ...sampleAlert(),
+        repository: undefined, // simulate missing field
+      }],
+      text: async () => '[]',
+      headers: { get: () => null },
+    }));
+
+    const findings = await fetchDependabotFindings({
+      org: 'o', token: 't', fetchImpl,
+      includeRepos: ['acme/billing-service'],
+    });
+
+    expect(findings[0].repository).toBe('acme/billing-service');
+  });
 });

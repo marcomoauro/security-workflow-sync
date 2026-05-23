@@ -5,16 +5,25 @@ import { createAsanaClient } from '../providers/asana/client.js';
 import { createAsanaProvider } from '../providers/asana/provider.js';
 
 export async function runSync({ config, logger, includeRepos = [], excludeRepos = [] }) {
-  logger.info(`Fetching Dependabot alerts for org "${config.githubOrg}"…`);
-  const fetched = await fetchDependabotFindings({ org: config.githubOrg, token: config.githubToken, logger });
+  if (includeRepos.length === 0) {
+    logger.info(`Fetching Dependabot alerts for org "${config.githubOrg}"…`);
+  }
+  // When --include-repos is set, the fetch already scopes to those repos via the
+  // repo-level Dependabot endpoint, so we skip the org-wide paginate.
+  const fetched = await fetchDependabotFindings({
+    org: config.githubOrg,
+    token: config.githubToken,
+    logger,
+    includeRepos,
+  });
   logger.info(`Fetched ${fetched.length} alerts (${countByState(fetched)}).`);
 
+  // filterFindings is still applied: it's a no-op for include (already done at fetch
+  // time) but it enforces --exclude-repos, and it's a safety net if any fetched alert
+  // somehow leaks through with the wrong repo.
   const findings = filterFindings(fetched, { include: includeRepos, exclude: excludeRepos });
   if (findings.length !== fetched.length) {
-    const includeMsg = includeRepos.length > 0 ? `include=${includeRepos.length}` : null;
-    const excludeMsg = excludeRepos.length > 0 ? `exclude=${excludeRepos.length}` : null;
-    const filterDesc = [includeMsg, excludeMsg].filter(Boolean).join(', ');
-    logger.info(`After repo filter (${filterDesc}): ${findings.length}/${fetched.length} alerts retained.`);
+    logger.info(`After repo exclude filter: ${findings.length}/${fetched.length} alerts retained.`);
   }
 
   const client = createAsanaClient({ token: config.asanaToken });

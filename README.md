@@ -72,6 +72,8 @@ docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
 
 Matching is **exact** on `owner/repo` (no globs, no regex). Tasks already in Asana for repos that the filter excludes are **left untouched** — the filter scopes one run, it does not purge state. If you want to permanently remove a repo, delete its tasks manually in Asana.
 
+**Performance note:** when `--include-repos` is set, the tool fetches alerts from each repo individually via the repo-level Dependabot API, instead of paginating the entire organization. For a single repo this turns a ~60-second org-wide fetch into a few hundred milliseconds. `--exclude-repos` still requires the full org-level fetch (we can't know what to skip without seeing it all).
+
 ## How team assignment works
 
 When the sync encounters a repository it has not seen before, it creates a placeholder task in the **Team Assignment** section with the Repository custom field set to that repo's name. You then manually set the **Tech Team** enum field on that placeholder in Asana.
