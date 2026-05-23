@@ -1,13 +1,15 @@
+import { fetchWithRetry } from '../core/fetch-retry.js';
+
 const GITHUB_API = 'https://api.github.com';
 
-export function createGithubClient({ token, fetchImpl = fetch }) {
+export function createGithubClient({ token, fetchImpl = fetch, logger } = {}) {
   if (!token) throw new Error('GITHUB_TOKEN is required');
 
   async function request(path, { method = 'GET', query } = {}) {
     const url = new URL(GITHUB_API + path);
     if (query) for (const [k, v] of Object.entries(query)) if (v != null) url.searchParams.set(k, String(v));
 
-    const res = await fetchImpl(url, {
+    const res = await fetchWithRetry(url, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -15,6 +17,10 @@ export function createGithubClient({ token, fetchImpl = fetch }) {
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'security-workflow-sync',
       },
+    }, {
+      fetchImpl,
+      logger,
+      label: `GitHub ${method} ${path}`,
     });
 
     if (!res.ok) {

@@ -1,13 +1,15 @@
+import { fetchWithRetry } from '../../core/fetch-retry.js';
+
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
-export function createAsanaClient({ token, fetchImpl = fetch }) {
+export function createAsanaClient({ token, fetchImpl = fetch, logger } = {}) {
   if (!token) throw new Error('ASANA_ACCESS_TOKEN is required');
 
   async function request(method, path, body, { query } = {}) {
     const url = new URL(ASANA_BASE + path);
     if (query) for (const [k, v] of Object.entries(query)) if (v != null) url.searchParams.set(k, String(v));
 
-    const res = await fetchImpl(url, {
+    const res = await fetchWithRetry(url, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -15,6 +17,10 @@ export function createAsanaClient({ token, fetchImpl = fetch }) {
         Accept: 'application/json',
       },
       body: body !== undefined ? JSON.stringify({ data: body }) : undefined,
+    }, {
+      fetchImpl,
+      logger,
+      label: `Asana ${method} ${path}`,
     });
 
     if (!res.ok) {
@@ -36,12 +42,16 @@ export function createAsanaClient({ token, fetchImpl = fetch }) {
 
     let pageNum = 0;
     while (true) {
-      const res = await fetchImpl(url, {
+      const res = await fetchWithRetry(url, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         },
+      }, {
+        fetchImpl,
+        logger,
+        label: `Asana GET ${url.pathname}`,
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');

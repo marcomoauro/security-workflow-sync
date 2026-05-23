@@ -5,7 +5,7 @@ import { dedupId, normalizeSeverity } from '../core/finding.js';
 // (avoids paginating the entire org just to discard everything but a few repos).
 // Otherwise fall back to the org-level endpoint.
 export async function fetchDependabotFindings({ org, token, fetchImpl, logger, includeRepos = [] }) {
-  const gh = createGithubClient({ token, fetchImpl });
+  const gh = createGithubClient({ token, fetchImpl, logger });
   const findings = [];
 
   if (includeRepos.length > 0) {

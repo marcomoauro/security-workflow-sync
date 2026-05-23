@@ -2,7 +2,7 @@ import { createAsanaClient } from '../providers/asana/client.js';
 import { bootstrapAsanaProject, resolveWorkspaceGid } from '../providers/asana/bootstrap.js';
 
 export async function runBootstrap({ config, projectName, teamGid, logger }) {
-  const client = createAsanaClient({ token: config.asanaToken });
+  const client = createAsanaClient({ token: config.asanaToken, logger });
 
   const workspaceGid = config.asanaWorkspaceGid
     || await resolveWorkspaceGid({ client, logger });

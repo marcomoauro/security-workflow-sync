@@ -35,7 +35,7 @@ export async function runSync({ config, logger, includeRepos = [], excludeRepos 
     logger.info(`Merged ${filtered.length - findings.length} duplicate alerts (same repo+package+advisory).`);
   }
 
-  const client = createAsanaClient({ token: config.asanaToken });
+  const client = createAsanaClient({ token: config.asanaToken, logger });
   const provider = createAsanaProvider({ client, projectGid: config.asanaProjectGid, logger });
 
   await provider.loadContext();
