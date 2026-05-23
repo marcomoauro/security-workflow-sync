@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dedupId, normalizeSeverity, filterFindings } from '../../src/core/finding.js';
+import { dedupId, normalizeSeverity, filterFindings, mergeFindingsByDedupId } from '../../src/core/finding.js';
 
 describe('dedupId', () => {
   it('is stable for the same identity tuple', () => {
@@ -87,5 +87,65 @@ describe('filterFindings', () => {
   it('handles undefined entries inside the lists gracefully', () => {
     const out = filterFindings(findings, { include: ['org/a', null, undefined, ''] });
     expect(out.map(f => f.repository)).toEqual(['org/a']);
+  });
+});
+
+describe('mergeFindingsByDedupId', () => {
+  it('keeps findings with different dedupIds untouched', () => {
+    const input = [
+      { dedupId: 'a', state: 'OPEN' },
+      { dedupId: 'b', state: 'FIXED' },
+      { dedupId: 'c', state: 'OPEN' },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(3);
+    expect(out.map(f => f.dedupId).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('when one alert is OPEN and one is FIXED on the same dedupId, OPEN wins', () => {
+    const input = [
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 1 } },
+      { dedupId: 'a', state: 'OPEN', metadata: { alertNumber: 2 } },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].state).toBe('OPEN');
+    expect(out[0].metadata.alertNumber).toBe(2);
+  });
+
+  it('OPEN-wins is independent of input order (OPEN first)', () => {
+    const input = [
+      { dedupId: 'a', state: 'OPEN', metadata: { alertNumber: 2 } },
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 1 } },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].state).toBe('OPEN');
+    expect(out[0].metadata.alertNumber).toBe(2);
+  });
+
+  it('keeps a FIXED finding when every alert for that dedupId is FIXED', () => {
+    const input = [
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 1 } },
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 2 } },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].state).toBe('FIXED');
+  });
+
+  it('handles three-way merge correctly (FIXED, FIXED, OPEN → OPEN)', () => {
+    const input = [
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 1 } },
+      { dedupId: 'a', state: 'FIXED', metadata: { alertNumber: 2 } },
+      { dedupId: 'a', state: 'OPEN', metadata: { alertNumber: 3 } },
+    ];
+    const out = mergeFindingsByDedupId(input);
+    expect(out).toHaveLength(1);
+    expect(out[0].state).toBe('OPEN');
+  });
+
+  it('handles empty input', () => {
+    expect(mergeFindingsByDedupId([])).toEqual([]);
   });
 });

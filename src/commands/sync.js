@@ -1,6 +1,6 @@
 import { fetchDependabotFindings } from '../sources/dependabot.js';
 import { reconcile } from '../core/reconcile.js';
-import { filterFindings } from '../core/finding.js';
+import { filterFindings, mergeFindingsByDedupId } from '../core/finding.js';
 import { createAsanaClient } from '../providers/asana/client.js';
 import { createAsanaProvider } from '../providers/asana/provider.js';
 
@@ -21,9 +21,18 @@ export async function runSync({ config, logger, includeRepos = [], excludeRepos 
   // filterFindings is still applied: it's a no-op for include (already done at fetch
   // time) but it enforces --exclude-repos, and it's a safety net if any fetched alert
   // somehow leaks through with the wrong repo.
-  const findings = filterFindings(fetched, { include: includeRepos, exclude: excludeRepos });
-  if (findings.length !== fetched.length) {
-    logger.info(`After repo exclude filter: ${findings.length}/${fetched.length} alerts retained.`);
+  const filtered = filterFindings(fetched, { include: includeRepos, exclude: excludeRepos });
+  if (filtered.length !== fetched.length) {
+    logger.info(`After repo exclude filter: ${filtered.length}/${fetched.length} alerts retained.`);
+  }
+
+  // Collapse multi-alerts-per-dedupId (Dependabot can emit a FIXED+OPEN pair for the
+  // same vulnerability after a re-trigger). OPEN wins — keeps the task open in Asana.
+  // Without this the reconcile loop's order-of-iteration is non-deterministic, which
+  // produces yo-yo close/reopen behavior between successive runs.
+  const findings = mergeFindingsByDedupId(filtered);
+  if (findings.length !== filtered.length) {
+    logger.info(`Merged ${filtered.length - findings.length} duplicate alerts (same repo+package+advisory).`);
   }
 
   const client = createAsanaClient({ token: config.asanaToken });
@@ -51,7 +60,8 @@ export async function runSync({ config, logger, includeRepos = [], excludeRepos 
 
   const summary = {
     fetched: fetched.length,
-    filtered: findings.length,
+    filtered: filtered.length,
+    unique: findings.length,
     repos: uniqueRepos.length,
     ...result,
   };
