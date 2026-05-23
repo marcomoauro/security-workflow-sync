@@ -50,6 +50,28 @@ docker run --rm \
   marcomoauro/security-workflow-sync:latest sync
 ```
 
+## Filtering repositories
+
+By default, every Dependabot alert in the GitHub organization is synced. To scope a run:
+
+```bash
+# Only sync alerts from these two repos:
+docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+  --include-repos translated/core,translated/lara-php
+
+# Skip a noisy archived repo:
+docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+  --exclude-repos translated/legacy-thing
+
+# Combine: include first, exclude second
+docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+  --include-repos translated/core,translated/lara-php \
+  --exclude-repos translated/core
+# → effectively syncs only translated/lara-php
+```
+
+Matching is **exact** on `owner/repo` (no globs, no regex). Tasks already in Asana for repos that the filter excludes are **left untouched** — the filter scopes one run, it does not purge state. If you want to permanently remove a repo, delete its tasks manually in Asana.
+
 ## How team assignment works
 
 When the sync encounters a repository it has not seen before, it creates a placeholder task in the **Team Assignment** section with the Repository custom field set to that repo's name. You then manually set the **Tech Team** enum field on that placeholder in Asana.

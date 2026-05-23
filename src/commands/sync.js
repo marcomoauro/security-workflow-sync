@@ -1,12 +1,21 @@
 import { fetchDependabotFindings } from '../sources/dependabot.js';
 import { reconcile } from '../core/reconcile.js';
+import { filterFindings } from '../core/finding.js';
 import { createAsanaClient } from '../providers/asana/client.js';
 import { createAsanaProvider } from '../providers/asana/provider.js';
 
-export async function runSync({ config, logger }) {
+export async function runSync({ config, logger, includeRepos = [], excludeRepos = [] }) {
   logger.info(`Fetching Dependabot alerts for org "${config.githubOrg}"…`);
-  const findings = await fetchDependabotFindings({ org: config.githubOrg, token: config.githubToken, logger });
-  logger.info(`Fetched ${findings.length} alerts (${countByState(findings)}).`);
+  const fetched = await fetchDependabotFindings({ org: config.githubOrg, token: config.githubToken, logger });
+  logger.info(`Fetched ${fetched.length} alerts (${countByState(fetched)}).`);
+
+  const findings = filterFindings(fetched, { include: includeRepos, exclude: excludeRepos });
+  if (findings.length !== fetched.length) {
+    const includeMsg = includeRepos.length > 0 ? `include=${includeRepos.length}` : null;
+    const excludeMsg = excludeRepos.length > 0 ? `exclude=${excludeRepos.length}` : null;
+    const filterDesc = [includeMsg, excludeMsg].filter(Boolean).join(', ');
+    logger.info(`After repo filter (${filterDesc}): ${findings.length}/${fetched.length} alerts retained.`);
+  }
 
   const client = createAsanaClient({ token: config.asanaToken });
   const provider = createAsanaProvider({ client, projectGid: config.asanaProjectGid, logger });
@@ -32,7 +41,8 @@ export async function runSync({ config, logger }) {
   });
 
   const summary = {
-    fetched: findings.length,
+    fetched: fetched.length,
+    filtered: findings.length,
     repos: uniqueRepos.length,
     ...result,
   };

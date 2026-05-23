@@ -8,7 +8,8 @@ const HELP = `
 sws — security-workflow-sync
 
 Usage:
-  sws sync                    Sync Dependabot alerts → Asana
+  sws sync [--include-repos owner/r1,owner/r2] [--exclude-repos owner/r3]
+                              Sync Dependabot alerts → Asana
   sws bootstrap [--name N]    Create the Asana project (sections + custom fields)
   sws --help
 
@@ -25,8 +26,20 @@ Env (bootstrap):
   ASANA_TEAM_GID         (optional) The Asana team to place the project under
 
 Flags:
-  --quiet                Suppress info logs
-  --name <string>        (bootstrap only) Project name (default: "Security Findings")
+  --quiet                            Suppress info logs
+  --name <string>                    (bootstrap only) Project name
+                                     (default: "Security Findings")
+  --include-repos <csv>              (sync only) Comma-separated list of
+                                     owner/repo names to include. If set, only
+                                     alerts from these repos are processed.
+                                     Can be repeated; values accumulate.
+  --exclude-repos <csv>              (sync only) Comma-separated list of
+                                     owner/repo names to skip. Applied after
+                                     --include-repos. Can be repeated.
+
+Note: tasks already in Asana for repos that the filter excludes are left
+untouched (not closed, not reopened). The filter scopes one run; it does not
+purge state.
 `;
 
 export async function main(argv) {
@@ -40,6 +53,8 @@ export async function main(argv) {
     options: {
       quiet: { type: 'boolean' },
       name: { type: 'string' },
+      'include-repos': { type: 'string', multiple: true },
+      'exclude-repos': { type: 'string', multiple: true },
     },
     allowPositionals: true,
   });
@@ -48,7 +63,12 @@ export async function main(argv) {
 
   if (command === 'sync') {
     assertSyncConfig(config);
-    await runSync({ config, logger });
+    await runSync({
+      config,
+      logger,
+      includeRepos: parseCsvList(values['include-repos']),
+      excludeRepos: parseCsvList(values['exclude-repos']),
+    });
     return;
   }
   if (command === 'bootstrap') {
@@ -58,4 +78,15 @@ export async function main(argv) {
   }
   process.stderr.write(`Unknown command: ${command}\n${HELP}`);
   process.exit(2);
+}
+
+// Parse one or more --flag occurrences whose values may themselves be comma-separated.
+// `--include-repos a,b --include-repos c` → ['a', 'b', 'c']. Empty input → [].
+function parseCsvList(input) {
+  if (!input) return [];
+  const items = Array.isArray(input) ? input : [input];
+  return items
+    .flatMap(s => String(s).split(','))
+    .map(s => s.trim())
+    .filter(Boolean);
 }
