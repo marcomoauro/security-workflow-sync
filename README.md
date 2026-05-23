@@ -57,17 +57,17 @@ By default, every Dependabot alert in the GitHub organization is synced. To scop
 ```bash
 # Only sync alerts from these two repos:
 docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
-  --include-repos translated/core,translated/lara-php
+  --include-repos acme/web-app,acme/billing-service
 
 # Skip a noisy archived repo:
 docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
-  --exclude-repos translated/legacy-thing
+  --exclude-repos acme/archived-thing
 
 # Combine: include first, exclude second
 docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
-  --include-repos translated/core,translated/lara-php \
-  --exclude-repos translated/core
-# → effectively syncs only translated/lara-php
+  --include-repos acme/web-app,acme/billing-service \
+  --exclude-repos acme/web-app
+# → effectively syncs only acme/billing-service
 ```
 
 Matching is **exact** on `owner/repo` (no globs, no regex). Tasks already in Asana for repos that the filter excludes are **left untouched** — the filter scopes one run, it does not purge state. If you want to permanently remove a repo, delete its tasks manually in Asana.
