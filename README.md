@@ -13,6 +13,41 @@ Current integration matrix:
 | GitHub Dependabot (org-level) | Asana |
 | _(Jira, Linear, GitHub Issues coming later)_ | |
 
+## Required GitHub setup (do this first)
+
+This tool is a **bridge**, not a scanner. The scanning is done by GitHub. For the sync to find anything, two GitHub features must be enabled on each repository you want to monitor:
+
+- **Dependency graph** — GitHub parses your manifest files (`package.json`, `requirements.txt`, `pom.xml`, `Gemfile.lock`, etc.) to build the list of declared dependencies.
+- **Dependabot alerts** — GitHub matches that list against the [GitHub Advisory Database](https://github.com/advisories) and produces alerts for known vulnerabilities.
+
+**Without both enabled, the Dependabot API returns zero alerts for that repo and `sws sync` will finish with `created: 0`.** A repo with scanning disabled looks identical to a clean repo from the API's perspective — the tool cannot tell them apart and cannot warn you. **Enable these before running the sync, otherwise the tool has nothing to read.**
+
+### Recommended: enable for the whole organization in one shot
+
+This covers every existing repo **and** every repo created in the future. The "automatically enable for new repositories" toggle is the important one — without it, new projects silently fall off the security radar.
+
+1. Open: `https://github.com/organizations/<your-org>/settings/security_analysis`
+2. Under **Dependency graph**:
+   - Click **Enable all** to turn it on for every current repository.
+   - Tick **Automatically enable for new public repositories** _and_ **for new private repositories**.
+3. Under **Dependabot alerts**, do the same:
+   - Click **Enable all**.
+   - Tick **Automatically enable for new repositories** (public + private).
+
+GitHub's full guide: <https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-security-settings-for-your-organization>
+
+### Alternative: enable per-repository
+
+If you only want to monitor a handful of repos and don't want to flip the org-level switch:
+
+1. Open the repo, then **Settings → Code security and analysis**.
+2. Turn on **Dependency graph**.
+3. Turn on **Dependabot alerts**.
+
+Give GitHub a few minutes to run the first scan before invoking `sws sync` — otherwise the run will look empty.
+
+GitHub's full guide: <https://docs.github.com/en/code-security/dependabot/dependabot-alerts/configuring-dependabot-alerts>
+
 ## Quickstart
 
 ### Step 1 — Asana credentials
@@ -129,7 +164,8 @@ jobs:
 
 ## What this tool does NOT do
 
-- **It is not a vulnerability scanner.** Dependabot does the scanning; this tool bridges its output into your workflow.
+- **It is not a vulnerability scanner.** Dependabot does the scanning; this tool bridges its output into your workflow. If you skip the [Required GitHub setup](#required-github-setup-do-this-first) above, the sync will run successfully and create zero tasks — because there is nothing to read.
+- **It does not enable Dependabot for you.** You must flip the GitHub toggles yourself, either per-repo or org-wide.
 - **It is not a dashboard.** The dashboard is Asana, where your team already lives.
 - **It does not filter by severity.** Every open alert becomes a task. Use Asana's built-in filtering if you want to focus on a specific severity level.
 
