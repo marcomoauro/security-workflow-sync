@@ -124,4 +124,47 @@ describe('bootstrapAsanaProject', () => {
       bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger })
     ).resolves.toEqual({ projectGid: 'P' });
   });
+
+  it('creates sections in the documented display order (severities first, Team Assignment last)', async () => {
+    const client = bootstrapClient();
+    await bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger });
+
+    const sectionNames = client.request.mock.calls
+      .filter(([method, path]) => method === 'POST' && path === '/projects/P/sections')
+      .map(([, , body]) => body.name);
+
+    expect(sectionNames).toEqual(['Critical', 'High', 'Medium', 'Low', 'Team Assignment']);
+  });
+
+  it('attaches custom fields in the documented display order (actionable first, IDs last)', async () => {
+    const client = bootstrapClient();
+    await bootstrapAsanaProject({ client, workspaceGid: 'W', projectName: 'Test', logger: silentLogger });
+
+    // The order of fields on the project is determined by the order of
+    // addCustomFieldSetting calls, since none of them exist beforehand.
+    const fieldAttachOrder = [];
+    for (const [method, path, body] of client.request.mock.calls) {
+      if (method !== 'POST' || path !== '/projects/P/addCustomFieldSetting') continue;
+      // Resolve gid → field name by looking at the create-field POST that produced this gid
+      const createCall = client.request.mock.calls.find(
+        ([m, p, b]) => m === 'POST' && p === '/custom_fields' && b && b.name && (typeof b === 'object')
+      );
+      // Easier: just pull names from the create-field POSTs in their call order
+      fieldAttachOrder.push(body.custom_field);
+    }
+
+    const fieldCreateNames = client.request.mock.calls
+      .filter(([method, path]) => method === 'POST' && path === '/custom_fields')
+      .map(([, , body]) => body.name);
+
+    expect(fieldCreateNames).toEqual([
+      'SWS: Severity',
+      'SWS: Repository',
+      'SWS: Package',
+      'SWS: Tech Team',
+      'SWS: Advisory',
+      'SWS: Advisory URL',
+      'SWS: Deduplication ID',
+    ]);
+  });
 });

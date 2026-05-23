@@ -154,7 +154,8 @@ describe('AsanaProvider.createTicket', () => {
     };
     await provider.createTicket(finding);
     const optCall = client.request.mock.calls.find(c => c[1] === '/custom_fields/cf-pkg/enum_options');
-    expect(optCall[2]).toEqual({ name: 'brand-new-package' });
+    expect(optCall[2].name).toBe('brand-new-package');
+    expect(typeof optCall[2].color).toBe('string'); // color is deterministic; specific value covered by schema tests
     expect(provider._ctx.fields['SWS: Package'].options.get('brand-new-package')).toBe('pkg-new');
   });
 

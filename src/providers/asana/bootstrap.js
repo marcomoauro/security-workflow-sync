@@ -1,4 +1,16 @@
-import { FIELD, SECTION_BY_SEVERITY, SECTION_TEAM_ASSIGNMENT, SEVERITY_ENUM_OPTIONS } from './schema.js';
+import { FIELD, SEVERITY_ENUM_OPTIONS, FIELD_DISPLAY_ORDER, SECTION_DISPLAY_ORDER } from './schema.js';
+
+// One spec per logical field. The bootstrap iterates FIELD_DISPLAY_ORDER (not this map's
+// key order) so the visual order in Asana is decoupled from this dictionary.
+const FIELD_SPECS = {
+  [FIELD.DEDUP]: { resource_subtype: 'text' },
+  [FIELD.ADVISORY]: { resource_subtype: 'text' },
+  [FIELD.ADVISORY_URL]: { resource_subtype: 'text' },
+  [FIELD.SEVERITY]: { resource_subtype: 'enum', enum_options: SEVERITY_ENUM_OPTIONS },
+  [FIELD.REPOSITORY]: { resource_subtype: 'enum', enum_options: [{ name: '—', color: 'cool-gray' }] },
+  [FIELD.PACKAGE]: { resource_subtype: 'enum', enum_options: [{ name: '—', color: 'cool-gray' }] },
+  [FIELD.TECH_TEAM]: { resource_subtype: 'enum', enum_options: [{ name: '—', color: 'cool-gray' }] },
+};
 
 export async function resolveWorkspaceGid({ client, logger }) {
   const me = await client.request('GET', '/users/me');
@@ -75,33 +87,24 @@ export async function bootstrapAsanaProject({ client, workspaceGid, teamGid, pro
   const project = await client.request('POST', '/projects', projectBody);
   logger.info(`Created project ${project.gid}.`);
 
-  // 1. Sections (Asana auto-creates a default "Untitled section" we leave alone)
-  const sectionsToCreate = [SECTION_TEAM_ASSIGNMENT, ...Object.values(SECTION_BY_SEVERITY)];
-  for (const name of sectionsToCreate) {
+  // 1. Sections — created in SECTION_DISPLAY_ORDER (most-urgent severities first,
+  // Team Assignment last). Asana shows sections in creation order on the board view.
+  // (Asana auto-creates a default "Untitled section" on every new project; we leave it.)
+  for (const name of SECTION_DISPLAY_ORDER) {
     await client.request('POST', `/projects/${project.gid}/sections`, { name });
     logger.info(`Created section "${name}".`);
   }
 
-  // 2. Custom fields — reuse existing workspace-level fields when present.
-  for (const name of [FIELD.DEDUP, FIELD.ADVISORY, FIELD.ADVISORY_URL]) {
+  // 2. Custom fields — iterated in FIELD_DISPLAY_ORDER (actionable info first,
+  // identifiers last). Asana shows fields in the order they were added to the project.
+  // Reuse workspace-level fields when present (idempotent on re-bootstrap).
+  // Repository / Package / Tech Team are seeded with a single placeholder option
+  // because Asana rejects enum custom fields with 0 options; real options are added
+  // lazily by the sync command's ensureEnumOption() as new repos/packages appear.
+  for (const name of FIELD_DISPLAY_ORDER) {
     await ensureCustomField({
       client, workspaceGid, projectGid: project.gid, name, logger,
-      body: { resource_subtype: 'text' },
-    });
-  }
-
-  await ensureCustomField({
-    client, workspaceGid, projectGid: project.gid, name: FIELD.SEVERITY, logger,
-    body: { resource_subtype: 'enum', enum_options: SEVERITY_ENUM_OPTIONS },
-  });
-
-  // Repository / Package / Tech Team: seeded with a single placeholder option because
-  // Asana rejects enum custom fields with 0 options. Real options are added lazily
-  // by the sync command's ensureEnumOption() as new repos/packages appear.
-  for (const name of [FIELD.REPOSITORY, FIELD.PACKAGE, FIELD.TECH_TEAM]) {
-    await ensureCustomField({
-      client, workspaceGid, projectGid: project.gid, name, logger,
-      body: { resource_subtype: 'enum', enum_options: [{ name: '—', color: 'cool-gray' }] },
+      body: FIELD_SPECS[name],
     });
   }
 

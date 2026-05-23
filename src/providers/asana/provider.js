@@ -1,4 +1,4 @@
-import { FIELD, SECTION_BY_SEVERITY, SECTION_TEAM_ASSIGNMENT, SEVERITY_TO_OPTION_NAME } from './schema.js';
+import { FIELD, SECTION_BY_SEVERITY, SECTION_TEAM_ASSIGNMENT, SEVERITY_TO_OPTION_NAME, pickEnumColor } from './schema.js';
 
 export function createAsanaProvider({ client, projectGid, logger }) {
   const ctx = {
@@ -123,7 +123,10 @@ export function createAsanaProvider({ client, projectGid, logger }) {
     if (gid) return gid;
 
     try {
-      const created = await client.request('POST', `/custom_fields/${field.gid}/enum_options`, { name: optionName });
+      const created = await client.request('POST', `/custom_fields/${field.gid}/enum_options`, {
+        name: optionName,
+        color: pickEnumColor(optionName),
+      });
       gid = created.gid;
       field.options.set(key, gid);
       return gid;
