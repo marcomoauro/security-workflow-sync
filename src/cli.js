@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import pkg from '../package.json' with { type: 'json' };
 import { loadConfig, assertSyncConfig, assertBootstrapConfig } from './config.js';
 import { createLogger } from './core/logger.js';
 import { runSync } from './commands/sync.js';
@@ -59,6 +60,9 @@ export async function main(argv) {
     allowPositionals: true,
   });
   const logger = createLogger({ quiet: !!values.quiet });
+  // Log the running version up front so it's visible in every output stream,
+  // including failure stack traces uploaded by users when filing bug reports.
+  logger.info(`security-workflow-sync v${pkg.version} — command: ${command}`);
   const config = loadConfig();
 
   if (command === 'sync') {
