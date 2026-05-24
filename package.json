@@ -1,7 +1,7 @@
 {
   "name": "security-workflow-sync",
   "version": "0.1.14",
-  "description": "Sync security findings into engineering workflow tools. Source: GitHub Dependabot. Destinations: Asana (today); Jira, Linear, GitHub Issues (planned).",
+  "description": "Sync GitHub Dependabot alerts into Asana tasks.",
   "type": "module",
   "bin": {
     "sws": "./bin/sws.js"

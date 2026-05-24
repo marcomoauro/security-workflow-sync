@@ -4,18 +4,7 @@ Bring security findings into the workflow tool your engineers already use.
 
 ## What it does
 
-security-workflow-sync is a workflow bridge, not a security dashboard. It reads open Dependabot alerts from a GitHub organization and creates or updates corresponding tasks in the workflow tool your team already uses. The sync is idempotent — running it twice produces no duplicates — so it is safe to schedule on a cron at any cadence. Team ownership is preserved across alert reopens: once a repo is assigned to a team, that assignment is never overwritten by subsequent syncs.
-
-The destination is pluggable — the core domain (`src/core/`) speaks only in `SecurityFinding` and a generic `WorkflowProvider` interface. Today only the Asana provider ships, but the architecture is built so adding Jira / Linear / GitHub Issues is a self-contained drop-in.
-
-Current integration matrix:
-
-| Source | Destination | Status |
-|--------|-------------|--------|
-| GitHub Dependabot (org-level) | Asana | ✅ shipped |
-| GitHub Dependabot (org-level) | Jira | ⏳ planned |
-| GitHub Dependabot (org-level) | Linear | ⏳ planned |
-| GitHub Dependabot (org-level) | GitHub Issues | ⏳ planned |
+security-workflow-sync is a workflow bridge, not a security dashboard. It reads open Dependabot alerts from a GitHub organization and creates or updates corresponding tasks in Asana. The sync is idempotent — running it twice produces no duplicates — so it is safe to schedule on a cron at any cadence. Team ownership is preserved across alert reopens: once a repo is assigned to a team, that assignment is never overwritten by subsequent syncs.
 
 ## Required GitHub setup (do this first)
 
@@ -53,8 +42,6 @@ Give GitHub a few minutes to run the first scan before invoking `sws sync` — o
 GitHub's full guide: <https://docs.github.com/en/code-security/dependabot/dependabot-alerts/configuring-dependabot-alerts>
 
 ## Quickstart
-
-> The steps below are written for the Asana destination, the only one shipped today. When more destinations land, each will get its own quickstart chapter and you'll pick which one to target.
 
 ### Step 1 — Asana credentials
 
@@ -172,8 +159,8 @@ jobs:
 
 - **It is not a vulnerability scanner.** Dependabot does the scanning; this tool bridges its output into your workflow. If you skip the [Required GitHub setup](#required-github-setup-do-this-first) above, the sync will run successfully and create zero tasks — because there is nothing to read.
 - **It does not enable Dependabot for you.** You must flip the GitHub toggles yourself, either per-repo or org-wide.
-- **It is not a dashboard.** The dashboard is your workflow tool (Asana today), where your team already lives.
-- **It does not filter by severity.** Every open alert becomes a task. Use your workflow tool's built-in filtering if you want to focus on a specific severity level.
+- **It is not a dashboard.** The dashboard is Asana, where your team already lives.
+- **It does not filter by severity.** Every open alert becomes a task. Use Asana's built-in filtering if you want to focus on a specific severity level.
 
 ## Roadmap
 
@@ -192,7 +179,52 @@ npm install
 npm test
 ```
 
-The architecture is a stateless reconciliation engine. The core domain (`src/core/`) knows nothing about Asana or GitHub — it speaks only in `SecurityFinding` and the `WorkflowProvider` duck-typed interface. To add a new destination (Jira, Linear, etc.), implement the five methods of that interface in `src/providers/<name>/provider.js`.
+The architecture is a stateless reconciliation engine. The core (`src/core/`) speaks only in `SecurityFinding` and a `WorkflowProvider` duck-typed interface — it knows nothing about GitHub or Asana. Providers translate those generic concepts into a specific tool's API.
+
+### How the Asana provider is laid out
+
+All Asana-specific code lives under `src/providers/asana/`. There are four files; each has one job.
+
+```
+src/providers/asana/
+├── client.js       HTTP layer. Wraps fetch with auth, the {data: ...} envelope,
+│                   offset-based pagination, and retries on 5xx / 429 (via
+│                   src/core/fetch-retry.js).
+│
+├── schema.js       Field & section names, display order, the deterministic
+│                   colour palette for enum options, and the pickEnumColor()
+│                   helper. Pure constants and pure functions, no I/O.
+│
+├── bootstrap.js    The one-shot setup: resolveWorkspaceGid() (auto-detect
+│                   from PAT), ensureCustomField() (idempotent reuse by name),
+│                   and bootstrapAsanaProject() (sections + custom fields in
+│                   the documented display order).
+│
+└── provider.js     The implementation of WorkflowProvider:
+                    loadContext, listExistingTickets, createTicket,
+                    updateTicket, closeTicket, ensureTeamAssignmentTasks.
+                    Plus pure renderers buildTaskName / buildTaskNotes
+                    (exported so the drift detector can compare strings).
+```
+
+The provider is wired into the CLI by `src/commands/sync.js` and `src/commands/bootstrap.js`. Both files import directly from `src/providers/asana/` — when a second provider is added, those two `import` lines become the dispatch point (config decides which provider's factory to call).
+
+### Working on the Asana provider — common changes
+
+| Goal | File | What changes |
+|---|---|---|
+| Add a new custom field to every task | `schema.js` + `bootstrap.js` + `provider.js` | Add a `FIELD.NAME` constant, an entry in `FIELD_SPECS`, an entry in `FIELD_DISPLAY_ORDER`, then read/write it in `buildCustomFieldsPayload` (create path) and `updateTicket` (update path). |
+| Change the notes layout | `provider.js` (`buildTaskNotes`) | Pure function. Tests in `tests/providers/asana/provider.test.js > buildTaskNotes`. The drift detector will auto-update existing tasks on the next sync. |
+| Reorder sections or fields on the board | `schema.js` (`SECTION_DISPLAY_ORDER` / `FIELD_DISPLAY_ORDER`) | One-line change. **Note:** Asana doesn't expose an API to reorder resources of an existing project — the new order only applies to projects bootstrapped after the change. |
+| Tune the colour palette for new enum options | `schema.js` (`ENUM_OPTION_COLORS`) | Pre-existing options keep their assigned colour; only new ones get the new palette. |
+| Change retry behaviour | `src/core/fetch-retry.js` (defaults) or pass `maxRetries` / `baseDelayMs` from `client.js` | The wrapper is provider-agnostic; both Asana and GitHub clients use it. |
+| Add a new method to the provider | `provider.js` | Export it on the returned object. The reconcile engine only calls the five methods of `WorkflowProvider`; anything beyond is provider-private (e.g. `ensureTeamAssignmentTasks` is Asana-only and is invoked directly from `sync.js`, not from `reconcile`). |
+
+### Test layout
+
+Tests mirror `src/`. Provider tests use a fake `client` (no HTTP) that returns canned envelope shapes — see `setupContext()` in `tests/providers/asana/provider.test.js` for the canonical mock. The Asana client itself is tested in isolation in `tests/providers/asana/client.test.js` against a mocked `fetchImpl`.
+
+Run a focused file with `npx vitest run tests/providers/asana/provider.test.js`.
 
 ## License
 
