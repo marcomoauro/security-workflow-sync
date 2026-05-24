@@ -73,7 +73,7 @@ If you belong to multiple Asana workspaces, the bootstrap command will print all
 Run bootstrap once to create the project with the required sections and custom fields:
 
 ```bash
-docker run --rm \
+docker run --rm --pull always \
   -e ASANA_ACCESS_TOKEN=... \
   marcomoauro/security-workflow-sync:latest bootstrap
 ```
@@ -85,7 +85,7 @@ The command prints the new `ASANA_PROJECT_GID`. Copy it for the next step.
 ### 3. First sync
 
 ```bash
-docker run --rm \
+docker run --rm --pull always \
   -e GITHUB_TOKEN=... \
   -e GITHUB_ORG=... \
   -e ASANA_ACCESS_TOKEN=... \
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Sync Dependabot to Asana
         run: |
-          docker run --rm \
+          docker run --rm --pull always \
             -e GITHUB_TOKEN=${{ secrets.SWS_GITHUB_TOKEN }} \
             -e GITHUB_ORG=${{ vars.GITHUB_ORG }} \
             -e ASANA_ACCESS_TOKEN=${{ secrets.ASANA_TOKEN }} \
@@ -162,15 +162,15 @@ By default, every Dependabot alert in the GitHub organization is synced. To scop
 
 ```bash
 # Only sync alerts from these two repos:
-docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+docker run --rm --pull always <env vars> marcomoauro/security-workflow-sync:latest sync \
   --include-repos acme/web-app,acme/billing-service
 
 # Skip a noisy archived repo:
-docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+docker run --rm --pull always <env vars> marcomoauro/security-workflow-sync:latest sync \
   --exclude-repos acme/archived-thing
 
 # Combine: include first, exclude second
-docker run --rm <env vars> marcomoauro/security-workflow-sync:latest sync \
+docker run --rm --pull always <env vars> marcomoauro/security-workflow-sync:latest sync \
   --include-repos acme/web-app,acme/billing-service \
   --exclude-repos acme/web-app
 # → effectively syncs only acme/billing-service
