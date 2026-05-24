@@ -1,6 +1,6 @@
 {
   "name": "security-workflow-sync",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Sync GitHub Dependabot alerts into Asana tasks.",
   "type": "module",
   "bin": {
