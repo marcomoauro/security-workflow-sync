@@ -17,14 +17,20 @@ export async function runBootstrap({ config, projectName, teamGid, logger }) {
 
   process.stdout.write([
     '',
-    'Bootstrap complete.',
+    'Bootstrap complete. The Asana project, sections, and custom fields are ready.',
+    '',
     'Export the following env var when running `sws sync`:',
     '',
     `  ASANA_PROJECT_GID=${projectGid}`,
     '',
-    'Next: open the Asana project, then for each repository placeholder in the "Team Assignment" section,',
-    'set the "Tech Team" enum field. From then on, new Dependabot alerts for that repository will be',
-    'auto-assigned to that team.',
+    'Next steps:',
+    '  1. Run `sws sync` to pull current Dependabot alerts into the project.',
+    '     The first sync also creates one placeholder task in the "Team Assignment"',
+    '     section for each repository it encounters.',
+    '  2. After that first sync, open the Asana project and set the',
+    '     "SWS: Tech Team" field on each placeholder.',
+    '  3. From the next sync onward, every alert for that repository will',
+    '     inherit the team automatically.',
     '',
   ].join('\n'));
 }
