@@ -123,6 +123,14 @@ When the sync encounters a repository it has not seen before, it creates a place
 
 From the next sync onward, every alert for that repository inherits the team value from the placeholder. The team field is append-only: if you later clear it on an individual task, the next sync restores it from the placeholder — it will never be blanked out by the tool.
 
+> ⚠️ **The tasks in the Team Assignment section are configuration records, not work items.** They are dummy placeholders the sync uses as a lookup table from repository → team. Treat them like settings, not like actionable tasks:
+>
+> - **Do not mark them complete.** Asana hides completed tasks from the default board view, so you would lose easy access to them, and a future re-bootstrap could re-create them as a duplicate.
+> - **Do not delete them.** Deleting a placeholder loses the Tech Team mapping for that repository; the next sync would re-create it empty and you'd have to re-enter the team.
+> - **Do not move them out of the Team Assignment section.** The sync looks them up by section; moving them elsewhere will make the lookup miss and the placeholder will be re-created (now as a duplicate).
+>
+> The only thing you should ever do on these tasks is set or change the `SWS: Tech Team` enum field. Everything else is automated.
+
 **Important:** the append-only invariant means that **changing** the Tech Team on an existing placeholder does **not** retroactively reassign existing vulnerability tasks for that repository. It only affects:
 
 - new vulnerability tasks created from that point onward
