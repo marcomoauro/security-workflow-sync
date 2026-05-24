@@ -4,14 +4,18 @@ Bring security findings into the workflow tool your engineers already use.
 
 ## What it does
 
-security-workflow-sync is a workflow bridge, not a security dashboard. It reads open Dependabot alerts from a GitHub organization and creates or updates corresponding tasks in Asana. The sync is idempotent — running it twice produces no duplicates — so it is safe to schedule on a cron at any cadence. Team ownership is preserved across alert reopens: once a repo is assigned to a team, that assignment is never overwritten by subsequent syncs.
+security-workflow-sync is a workflow bridge, not a security dashboard. It reads open Dependabot alerts from a GitHub organization and creates or updates corresponding tasks in the workflow tool your team already uses. The sync is idempotent — running it twice produces no duplicates — so it is safe to schedule on a cron at any cadence. Team ownership is preserved across alert reopens: once a repo is assigned to a team, that assignment is never overwritten by subsequent syncs.
+
+The destination is pluggable — the core domain (`src/core/`) speaks only in `SecurityFinding` and a generic `WorkflowProvider` interface. Today only the Asana provider ships, but the architecture is built so adding Jira / Linear / GitHub Issues is a self-contained drop-in.
 
 Current integration matrix:
 
-| Source | Destination |
-|--------|-------------|
-| GitHub Dependabot (org-level) | Asana |
-| _(Jira, Linear, GitHub Issues coming later)_ | |
+| Source | Destination | Status |
+|--------|-------------|--------|
+| GitHub Dependabot (org-level) | Asana | ✅ shipped |
+| GitHub Dependabot (org-level) | Jira | ⏳ planned |
+| GitHub Dependabot (org-level) | Linear | ⏳ planned |
+| GitHub Dependabot (org-level) | GitHub Issues | ⏳ planned |
 
 ## Required GitHub setup (do this first)
 
@@ -49,6 +53,8 @@ Give GitHub a few minutes to run the first scan before invoking `sws sync` — o
 GitHub's full guide: <https://docs.github.com/en/code-security/dependabot/dependabot-alerts/configuring-dependabot-alerts>
 
 ## Quickstart
+
+> The steps below are written for the Asana destination, the only one shipped today. When more destinations land, each will get its own quickstart chapter and you'll pick which one to target.
 
 ### Step 1 — Asana credentials
 
@@ -166,8 +172,8 @@ jobs:
 
 - **It is not a vulnerability scanner.** Dependabot does the scanning; this tool bridges its output into your workflow. If you skip the [Required GitHub setup](#required-github-setup-do-this-first) above, the sync will run successfully and create zero tasks — because there is nothing to read.
 - **It does not enable Dependabot for you.** You must flip the GitHub toggles yourself, either per-repo or org-wide.
-- **It is not a dashboard.** The dashboard is Asana, where your team already lives.
-- **It does not filter by severity.** Every open alert becomes a task. Use Asana's built-in filtering if you want to focus on a specific severity level.
+- **It is not a dashboard.** The dashboard is your workflow tool (Asana today), where your team already lives.
+- **It does not filter by severity.** Every open alert becomes a task. Use your workflow tool's built-in filtering if you want to focus on a specific severity level.
 
 ## Roadmap
 
